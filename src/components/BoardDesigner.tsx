@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Board, CellType, ColorRequirement } from '../types';
+import { Board, CellType, ColorRequirement, PlacedShape, CardValue } from '../types';
 
 interface BoardDesignerProps {
   board: Board;
@@ -35,45 +35,24 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
     }
   };
 
-  const getCellIcon = (type: CellType): string => {
-    switch (type) {
-      case CellType.Entrance:
-        return '🚪';
-      case CellType.Key:
-        return '🔑';
-      case CellType.Supplies:
-        return '🎒';
-      case CellType.Mana:
-        return '✨';
-      case CellType.Encounter:
-        return '👾';
-      case CellType.Treasure:
-        return '💎';
-      case CellType.Relic:
-        return '🏆';
-      default:
-        return '';
-    }
-  };
-
   const getColorText = (colorRequirement: ColorRequirement): JSX.Element | string => {
-    const outlineStyle = {
-      textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000'
-    };
+    // const outlineStyle = {
+    //   textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000'
+    // };
 
     switch (colorRequirement) {
       case ColorRequirement.Red:
-        return <span style={outlineStyle}>R</span>;
+        return <span>R</span>;
       case ColorRequirement.Orange:
-        return <span style={outlineStyle}>O</span>;
+        return <span>O</span>;
       case ColorRequirement.Yellow:
-        return <span style={outlineStyle}>Y</span>;
+        return <span>Y</span>;
       case ColorRequirement.Green:
-        return <span style={outlineStyle}>G</span>;
+        return <span>G</span>;
       case ColorRequirement.Blue:
-        return <span style={outlineStyle}>B</span>;
+        return <span>B</span>;
       case ColorRequirement.Purple:
-        return <span style={outlineStyle}>P</span>;
+        return <span>P</span>;
       default:
         return '';
     }

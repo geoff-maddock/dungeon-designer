@@ -1,7 +1,6 @@
-// Updated CardDrawSimulator.tsx
 import React, { useState, useEffect } from 'react';
-import { CardValue, CardDraw, Board, ActionShape, PlacedShape } from '../types';
-import { findValidPlacement, rotateShape } from '../utils/gameLogic';
+import { CardValue, CardDraw, Board, ActionShape, PlacedShape, CellType } from '../types';
+import { findValidPlacement, rotateShape, createStandardDeck, shuffleDeck } from '../utils/gameLogic';
 
 interface CardDrawSimulatorProps {
   board: Board;
@@ -20,7 +19,7 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
   const [drawnCards, setDrawnCards] = useState<CardDraw[]>([]);
   const [message, setMessage] = useState<string>('');
   const [placedShapes, setPlacedShapes] = useState<PlacedShape[]>([]);
-  const [remainingCards, setRemainingCards] = useState<number>(52); // Standard deck size
+  const [deck, setDeck] = useState<CardDraw[]>([]);
   const [uncoveredCells, setUncoveredCells] = useState<number>(0);
 
   useEffect(() => {
@@ -42,39 +41,41 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
     setUncoveredCells(totalCells - coveredCells.size);
   }, [board, placedShapes]);
 
-  // Initialize deck when deckCount changes
+  // Initialize and shuffle deck when deckCount changes
   useEffect(() => {
-    setRemainingCards(52 * deckCount);
+    initializeDeck();
   }, [deckCount]);
 
-  const suits = ['hearts', 'diamonds', 'clubs', 'spades'] as const;
-  const values: CardValue[] = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+  const initializeDeck = () => {
+    // Create a new deck with the specified count
+    let newDeck: CardDraw[] = [];
 
-  const handleDeckCountChange = (newCount: number) => {
-    if (newCount >= 1 && newCount <= 3) { // Limit to 1-3 decks
-      setDeckCount(newCount);
-      handleResetDeck(); // Reset when changing deck count
+    // Add the specified number of standard decks
+    for (let i = 0; i < deckCount; i++) {
+      const standardDeck = createStandardDeck();
+      newDeck = [...newDeck, ...standardDeck];
     }
+
+    // Shuffle the deck
+    newDeck = shuffleDeck(newDeck);
+
+    setDeck(newDeck);
   };
 
   const drawCard = () => {
-    if (remainingCards <= 0) {
+    if (deck.length === 0) {
       setMessage("Deck is empty! Reset to continue drawing.");
       return;
     }
 
-    // Simple random card draw
-    const randomSuit = suits[Math.floor(Math.random() * suits.length)];
-    const randomValue = values[Math.floor(Math.random() * values.length)];
+    // Take the top card from the deck
+    const newCard = deck[0];
 
-    const newCard: CardDraw = {
-      value: randomValue,
-      suit: randomSuit,
-      isPlaced: false
-    };
+    // Remove the card from the deck
+    const newDeck = [...deck.slice(1)];
+    setDeck(newDeck);
 
     setDrawnCards(prev => [...prev, newCard]);
-    setRemainingCards(prev => prev - 1);
 
     // Try to place the shape based on the card value
     tryPlaceShape(newCard);
@@ -84,10 +85,15 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
     setDrawnCards([]);
     setMessage('Deck has been reset. All placed shapes have been cleared.');
     setPlacedShapes([]);
-    setRemainingCards(52 * deckCount);
-    onResetDeck(); // Call the parent's reset function
+    initializeDeck(); // Re-initialize the deck
+    onResetDeck();    // Call the parent's reset function
   };
 
+  const handleDeckCountChange = (newCount: number) => {
+    if (newCount >= 1 && newCount <= 3) { // Limit to 1-3 decks
+      setDeckCount(newCount);
+    }
+  };
 
   const tryPlaceShape = (card: CardDraw) => {
     // Face cards trigger encounter
@@ -131,7 +137,10 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
       }
 
       if (placement) {
-        setMessage(`Placed shape for ${card.value} of ${card.suit} at position [${placement.row}, ${placement.col}]`);
+        // Process cell actions for each covered cell
+        const actionsMessage = resolveCellActions(board, shape, placement.row, placement.col);
+
+        setMessage(`Placed shape for ${card.value} of ${card.suit}. ${actionsMessage}`);
 
         // Record the placed shape
         const newPlacedShape: PlacedShape = {
@@ -158,6 +167,44 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
     }
 
     setMessage(`Drew ${card.value} of ${card.suit} - No valid placement found!`);
+  };
+
+  // Add this helper function to resolve cell actions
+  const resolveCellActions = (board: Board, shape: number[][], startRow: number, startCol: number): string => {
+    const actions: string[] = [];
+
+    for (let r = 0; r < shape.length; r++) {
+      for (let c = 0; c < shape[0].length; c++) {
+        if (shape[r][c] === 1) {
+          const boardRow = startRow + r;
+          const boardCol = startCol + c;
+          const cell = board[boardRow][boardCol];
+
+          switch (cell.type) {
+            case CellType.Key:
+              actions.push("Picked up a Key");
+              break;
+            case CellType.Supplies:
+              actions.push("Collected Supplies");
+              break;
+            case CellType.Mana:
+              actions.push("Gained Mana");
+              break;
+            case CellType.Encounter:
+              actions.push("Resolved an Encounter");
+              break;
+            case CellType.Treasure:
+              actions.push("Found Treasure");
+              break;
+            case CellType.Relic:
+              actions.push("Discovered a Relic");
+              break;
+          }
+        }
+      }
+    }
+
+    return actions.length > 0 ? `Actions: ${actions.join(', ')}` : '';
   };
 
   const getCardColor = (suit: string) => {
@@ -208,10 +255,10 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
       <div className="mb-4 flex gap-2">
         <button
           onClick={drawCard}
-          disabled={remainingCards <= 0}
+          disabled={deck.length === 0}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded disabled:bg-gray-400"
         >
-          Draw Card ({remainingCards})
+          Draw Card ({deck.length})
         </button>
         <button
           onClick={handleResetDeck}
@@ -231,7 +278,7 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
         {drawnCards.map((card, index) => (
           <div
             key={index}
-            className={`w-12 h-16 border rounded flex items-center justify-center ${card.isPlaced ? 'opacity-50' : ''} ${getCardColor(card.suit)}`}
+            className={`w-12 h-16 border rounded flex items-center justify-center ${card.isPlaced ? 'opacity-25' : ''} ${getCardColor(card.suit)}`}
           >
             <div className="text-center">
               <div>{card.value}</div>

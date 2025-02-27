@@ -1,6 +1,7 @@
-import { Board, CellType } from '../types';
+import { Board, CellType, PlacedShape } from '../types';
+import { CardDraw } from '../types';
 
-// Update findValidPlacement to account for already placed shapes and adjacency rules
+// Update findValidPlacement to ensure the adjacency rule is enforced
 export const findValidPlacement = (
   board: Board,
   shape: number[][],
@@ -23,18 +24,6 @@ export const findValidPlacement = (
 
   if (entranceRow === -1) return null; // No entrance found
 
-  // Create a map of all occupied positions from existing shapes
-  const occupied = new Set<string>();
-  placedShapes.forEach(placed => {
-    for (let r = 0; r < placed.shape.length; r++) {
-      for (let c = 0; c < placed.shape[0].length; c++) {
-        if (placed.shape[r][c] === 1) {
-          occupied.add(`${placed.startRow + r},${placed.startCol + c}`);
-        }
-      }
-    }
-  });
-
   // Generate all potential starting positions
   const potentialPositions: { row: number, col: number }[] = [];
 
@@ -53,39 +42,38 @@ export const findValidPlacement = (
     }
   } else {
     // For subsequent shapes, find all positions adjacent to existing shapes
+    const adjacentPositions = new Set<string>();
+
     placedShapes.forEach(placed => {
       for (let r = 0; r < placed.shape.length; r++) {
         for (let c = 0; c < placed.shape[0].length; c++) {
           if (placed.shape[r][c] === 1) {
-            const adjacentPositions = [
-              { row: placed.startRow + r - 1, col: placed.startCol + c },  // up
-              { row: placed.startRow + r + 1, col: placed.startCol + c },  // down
-              { row: placed.startRow + r, col: placed.startCol + c - 1 },  // left
-              { row: placed.startRow + r, col: placed.startCol + c + 1 }   // right
-            ];
-
-            adjacentPositions.forEach(pos => {
-              if (!occupied.has(`${pos.row},${pos.col}`)) {
-                potentialPositions.push(pos);
-              }
-            });
+            // Add all four adjacent positions
+            adjacentPositions.add(`${placed.startRow + r - 1},${placed.startCol + c}`); // up
+            adjacentPositions.add(`${placed.startRow + r + 1},${placed.startCol + c}`); // down
+            adjacentPositions.add(`${placed.startRow + r},${placed.startCol + c - 1}`); // left
+            adjacentPositions.add(`${placed.startRow + r},${placed.startCol + c + 1}`); // right
           }
         }
       }
+    });
+
+    // Convert adjacency set back to positions array
+    adjacentPositions.forEach(pos => {
+      const [row, col] = pos.split(',').map(Number);
+      potentialPositions.push({ row, col });
     });
   }
 
   // Try each potential position
   for (const pos of potentialPositions) {
-    if (canPlaceShapeAt(board, shape, pos.row, pos.col, occupied)) {
+    if (canPlaceShapeAt(board, shape, pos.row, pos.col, placedShapes)) {
       return pos;
     }
   }
 
   return null;
 };
-
-
 
 // Add this function to rotate a shape (90 degrees clockwise)
 export const rotateShape = (shape: number[][]): number[][] => {
@@ -102,40 +90,15 @@ export const rotateShape = (shape: number[][]): number[][] => {
   return rotated;
 };
 
-const findTraversedCells = (board: Board): { row: number, col: number }[] => {
-  const traversed: { row: number, col: number }[] = [];
-  const visited = Array(board.length).fill(false).map(() => Array(board[0].length).fill(false));
+// Removed unused findTraversedCells function
 
-  // Find entrance
-  let entranceRow = -1;
-  let entranceCol = -1;
-
-  for (let r = 0; r < board.length; r++) {
-    for (let c = 0; c < board[0].length; c++) {
-      if (board[r][c].type === CellType.Entrance || board[r][c].traversed === true) {
-        traversed.push({ row: r, col: c });
-        visited[r][c] = true;
-
-        if (board[r][c].type === CellType.Entrance) {
-          entranceRow = r;
-          entranceCol = c;
-        }
-      }
-    }
-  }
-
-  if (traversed.length === 0) return []; // No entrance or traversed cells found
-
-  return traversed;
-};
-
-// Update canPlaceShapeAt to check for walls and boundaries
+// Update canPlaceShapeAt to check for overlaps with existing shapes
 const canPlaceShapeAt = (
   board: Board,
   shape: number[][],
   startRow: number,
   startCol: number,
-  occupied: Set<string>
+  placedShapes: PlacedShape[]
 ): boolean => {
   const rows = board.length;
   const cols = board[0].length;
@@ -147,44 +110,51 @@ const canPlaceShapeAt = (
     return false;
   }
 
+  // Create a map of all occupied positions from existing shapes
+  const occupiedByShapes = new Set<string>();
+  placedShapes.forEach(placed => {
+    for (let r = 0; r < placed.shape.length; r++) {
+      for (let c = 0; c < placed.shape[0].length; c++) {
+        if (placed.shape[r][c] === 1) {
+          occupiedByShapes.add(`${placed.startRow + r},${placed.startCol + c}`);
+        }
+      }
+    }
+  });
+
   // Check each cell where the shape would be placed
   for (let r = 0; r < shape.length; r++) {
     for (let c = 0; c < shape[0].length; c++) {
       if (shape[r][c] === 1) {
         const boardRow = startRow + r;
         const boardCol = startCol + c;
-        const key = `${boardRow},${boardCol}`;
 
-        // Check if this position is already occupied
-        if (occupied.has(key)) {
+        // Check if this position is already occupied by another shape
+        if (occupiedByShapes.has(`${boardRow},${boardCol}`)) {
           return false;
         }
 
-        // Check if this is a wall cell
+        // Check if this is a wall cell - cannot overlap walls
         if (board[boardRow][boardCol].type === CellType.Wall) {
           return false;
         }
 
         // Check for walls on cell boundaries
-        // If moving right and there's a left wall in the next cell
         if (c < shape[0].length - 1 && shape[r][c + 1] === 1 &&
           board[boardRow][boardCol].walls.right) {
           return false;
         }
 
-        // If moving down and there's a top wall in the cell below
         if (r < shape.length - 1 && shape[r + 1][c] === 1 &&
           board[boardRow][boardCol].walls.bottom) {
           return false;
         }
 
-        // If moving left and there's a right wall in the previous cell
         if (boardCol > 0 && c > 0 && shape[r][c - 1] === 1 &&
           board[boardRow][boardCol - 1].walls.right) {
           return false;
         }
 
-        // If moving up and there's a bottom wall in the cell above
         if (boardRow > 0 && r > 0 && shape[r - 1][c] === 1 &&
           board[boardRow - 1][boardCol].walls.bottom) {
           return false;
@@ -195,7 +165,6 @@ const canPlaceShapeAt = (
 
   return true;
 };
-
 
 // Update placeShapeOnBoard to return the modified board
 export const placeShapeOnBoard = (
@@ -219,4 +188,34 @@ export const placeShapeOnBoard = (
   }
 
   return newBoard;
+};
+
+// Create a standard 52-card deck
+export const createStandardDeck = (): CardDraw[] => {
+  const suits = ['hearts', 'diamonds', 'clubs', 'spades'] as const;
+  const values: CardValue[] = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+  const deck: CardDraw[] = [];
+
+  // Create exactly one of each card
+  for (const suit of suits) {
+    for (const value of values) {
+      deck.push({
+        suit,
+        value,
+        isPlaced: false
+      });
+    }
+  }
+
+  return deck;
+};
+
+// Fisher-Yates shuffle algorithm for the deck
+export const shuffleDeck = <T>(deck: T[]): T[] => {
+  const newDeck = [...deck];
+  for (let i = newDeck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newDeck[i], newDeck[j]] = [newDeck[j], newDeck[i]];
+  }
+  return newDeck;
 };

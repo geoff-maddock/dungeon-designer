@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Download, Upload, Save, Trash2, RefreshCw, Grid } from 'lucide-react';
+import { Download, Upload, Save, Trash2, RefreshCw, Grid } from 'lucide-react';
 import BoardDesigner from './components/BoardDesigner';
 import ActionShapes from './components/ActionShapes';
 import CardDrawSimulator from './components/CardDrawSimulator';
-import { CellType, ColorRequirement, Board, ActionShape } from './types';
+import { CellType, ColorRequirement, Board, ActionShape, PlacedShape } from './types';
 import { generateRandomBoard } from './utils/boardGenerator';
 import { placeShapeOnBoard } from './utils/gameLogic';
 
@@ -151,7 +151,7 @@ function App() {
         if (data.actionShapes) setActionShapes(data.actionShapes);
         if (data.size) setBoardSize(data.size);
       } catch (error) {
-        alert('Error importing board: Invalid file format');
+        alert('Error importing board: Invalid file format' + error);
       }
     };
     reader.readAsText(file);
