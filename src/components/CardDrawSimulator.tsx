@@ -1,20 +1,32 @@
+// Update src/components/CardDrawSimulator.tsx
 import React, { useState } from 'react';
-import { CardValue, CardDraw, Board, ActionShape } from '../types';
-import { findValidPlacement } from '../utils/gameLogic';
+import { CardValue, CardDraw, Board, ActionShape, PlacedShape } from '../types';
+import { findValidPlacement, rotateShape } from '../utils/gameLogic';
 
 interface CardDrawSimulatorProps {
   board: Board;
   actionShapes: ActionShape[];
-  onPlaceShape: (startRow: number, startCol: number, shape: number[][]) => void;
+  onPlaceShape: (startRow: number, startCol: number, shape: number[][], cardValue: CardValue, cardSuit: string) => void;
+  onResetDeck: () => void; // Add this new prop
 }
 
 const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
   board,
   actionShapes,
-  onPlaceShape
+  onPlaceShape,
+  onResetDeck // Add this to the destructured props
 }) => {
   const [drawnCards, setDrawnCards] = useState<CardDraw[]>([]);
   const [message, setMessage] = useState<string>('');
+  const [placedShapes, setPlacedShapes] = useState<PlacedShape[]>([]);
+
+  // Add a reset function that clears local state
+  const handleResetDeck = () => {
+    setDrawnCards([]);
+    setMessage('Deck has been reset. All placed shapes have been cleared.');
+    setPlacedShapes([]);
+    onResetDeck(); // Call the parent's reset function
+  };
 
   const suits = ['hearts', 'diamonds', 'clubs', 'spades'] as const;
   const values: CardValue[] = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
@@ -53,13 +65,46 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
       return;
     }
 
-    // Try each shape until we find a valid placement
-    for (const shape of matchingShapes) {
-      const placement = findValidPlacement(board, shape.shape);
+    // Try each shape with different rotations
+    for (const shapeObj of matchingShapes) {
+      // Try original orientation
+      let shape = shapeObj.shape;
+      let placement = findValidPlacement(board, shape, placedShapes);
+
+      // If not found, try rotating 90 degrees
+      if (!placement) {
+        shape = rotateShape(shape);
+        placement = findValidPlacement(board, shape, placedShapes);
+      }
+
+      // If not found, try rotating 180 degrees
+      if (!placement) {
+        shape = rotateShape(shape);
+        placement = findValidPlacement(board, shape, placedShapes);
+      }
+
+      // If not found, try rotating 270 degrees
+      if (!placement) {
+        shape = rotateShape(shape);
+        placement = findValidPlacement(board, shape, placedShapes);
+      }
 
       if (placement) {
         setMessage(`Placed shape for ${card.value} of ${card.suit} at position [${placement.row}, ${placement.col}]`);
-        onPlaceShape(placement.row, placement.col, shape.shape);
+
+        // Record the placed shape
+        const newPlacedShape: PlacedShape = {
+          shape,
+          startRow: placement.row,
+          startCol: placement.col,
+          cardValue: card.value,
+          cardSuit: card.suit
+        };
+
+        setPlacedShapes(prev => [...prev, newPlacedShape]);
+
+        // Update the board
+        onPlaceShape(placement.row, placement.col, shape, card.value, card.suit);
 
         // Mark this card as placed
         setDrawnCards(prev =>
@@ -92,12 +137,18 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
     <div className="bg-white rounded-lg shadow-md p-4">
       <h2 className="text-lg font-semibold mb-3">Card Draw Simulator</h2>
 
-      <div className="mb-4">
+      <div className="mb-4 flex gap-2">
         <button
           onClick={drawCard}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded"
         >
           Draw Card
+        </button>
+        <button
+          onClick={handleResetDeck}
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded flex items-center"
+        >
+          Reset Deck
         </button>
       </div>
 

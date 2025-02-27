@@ -20,6 +20,15 @@ export enum ColorRequirement {
   Purple = 'purple'
 }
 
+// Add to src/types.ts
+export interface PlacedShape {
+  shape: number[][];
+  startRow: number;
+  startCol: number;
+  cardValue: CardValue;
+  cardSuit: string;
+}
+
 export interface Cell {
   type: CellType;
   colorRequirement: ColorRequirement;

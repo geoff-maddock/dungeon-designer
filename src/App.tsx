@@ -26,6 +26,7 @@ function App() {
   const [selectedColor, setSelectedColor] = useState<ColorRequirement>(ColorRequirement.None);
   const [wallToolActive, setWallToolActive] = useState<boolean>(false);
   const [selectedWall, setSelectedWall] = useState<'top' | 'right' | 'bottom' | 'left' | null>(null);
+  const [placedShapes, setPlacedShapes] = useState<PlacedShape[]>([]);
 
   const [actionShapes, setActionShapes] = useState<ActionShape[]>([
     // Level 1 shapes (2 squares)
@@ -72,6 +73,22 @@ function App() {
     }
 
     setBoard(newBoard);
+  };
+
+  const handleResetDeck = () => {
+    // Clear all placed shapes
+    setPlacedShapes([]);
+
+    // Reset any traversed markers on the board
+    const resetBoard = JSON.parse(JSON.stringify(board)) as Board;
+    for (let r = 0; r < resetBoard.length; r++) {
+      for (let c = 0; c < resetBoard[0].length; c++) {
+        if (resetBoard[r][c].traversed) {
+          resetBoard[r][c].traversed = false;
+        }
+      }
+    }
+    setBoard(resetBoard);
   };
 
   const handleSaveBoard = () => {
@@ -168,9 +185,24 @@ function App() {
     setBoardSize(newSize);
   };
 
-  const handlePlaceShape = (startRow: number, startCol: number, shape: number[][]) => {
+  // Update the handlePlaceShape function
+  const handlePlaceShape = (
+    startRow: number,
+    startCol: number,
+    shape: number[][],
+    cardValue?: CardValue,
+    cardSuit?: string
+  ) => {
     const newBoard = placeShapeOnBoard(board, shape, startRow, startCol);
     setBoard(newBoard);
+
+    // If this is from a card draw, track the placed shape
+    if (cardValue && cardSuit) {
+      setPlacedShapes(prev => [
+        ...prev,
+        { shape, startRow, startCol, cardValue, cardSuit }
+      ]);
+    }
   };
 
   return (
@@ -245,6 +277,7 @@ function App() {
           <BoardDesigner
             board={board}
             onCellClick={handleCellClick}
+            placedShapes={placedShapes}
           />
         </div>
 
@@ -442,16 +475,19 @@ function App() {
             </div>
           </div>
 
+          <CardDrawSimulator
+            board={board}
+            actionShapes={actionShapes}
+            onPlaceShape={handlePlaceShape}
+            onResetDeck={handleResetDeck} // Add this new prop
+          />
+
           <div className="bg-white rounded-lg shadow-md p-4">
             <h2 className="text-lg font-semibold mb-3">Action Shapes</h2>
             <ActionShapes shapes={actionShapes} />
           </div>
 
-          <CardDrawSimulator
-            board={board}
-            actionShapes={actionShapes}
-            onPlaceShape={handlePlaceShape}
-          />
+
 
           <div className="bg-white rounded-lg shadow-md p-4">
             <h2 className="text-lg font-semibold mb-3">Saved Boards</h2>

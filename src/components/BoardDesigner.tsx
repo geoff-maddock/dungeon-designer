@@ -4,9 +4,10 @@ import { Board, CellType, ColorRequirement } from '../types';
 interface BoardDesignerProps {
   board: Board;
   onCellClick: (row: number, col: number) => void;
+  placedShapes?: PlacedShape[]; // Add this prop
 }
 
-const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick }) => {
+const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, placedShapes = [] }) => {
   const [hoveredCell, setHoveredCell] = useState<{ row: number, col: number } | null>(null);
 
   const getCellColor = (type: CellType, colorRequirement: ColorRequirement): string => {
@@ -148,10 +149,39 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick }) => 
     }
   };
 
+  // Add this function to check if a cell has a placed shape
+  const getPlacedShapeInfo = (row: number, col: number): { cardValue: CardValue, cardSuit: string } | null => {
+    for (const shape of placedShapes) {
+      for (let r = 0; r < shape.shape.length; r++) {
+        for (let c = 0; c < shape.shape[0].length; c++) {
+          if (shape.shape[r][c] === 1 &&
+            shape.startRow + r === row &&
+            shape.startCol + c === col) {
+            return {
+              cardValue: shape.cardValue,
+              cardSuit: shape.cardSuit
+            };
+          }
+        }
+      }
+    }
+    return null;
+  };
+
+  // Add this helper function for suit symbols
+  function getSuitSymbol(suit: string): string {
+    switch (suit) {
+      case 'hearts': return '♥';
+      case 'diamonds': return '♦';
+      case 'clubs': return '♣';
+      case 'spades': return '♠';
+      default: return '';
+    }
+  }
+
   return (
     <div className="overflow-auto">
-      <div
-        className="grid gap-px bg-gray-300 border-2 border-gray-400 rounded"
+      <div className="grid gap-px bg-gray-300 border-2 border-gray-400 rounded"
         style={{
           gridTemplateColumns: `repeat(${board[0].length}, minmax(0, 1fr))`,
           width: 'fit-content'
@@ -160,6 +190,7 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick }) => 
         {board.map((row, rowIndex) => (
           row.map((cell, colIndex) => {
             const hasWalls = cell.walls.top || cell.walls.right || cell.walls.bottom || cell.walls.left;
+            const placedShape = getPlacedShapeInfo(rowIndex, colIndex);
 
             return (
               <div
@@ -171,6 +202,15 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick }) => 
               >
                 {getCellIconWithStyle(cell.type)}
                 {cell.type === CellType.Empty && getColorText(cell.colorRequirement)}
+
+                {/* Action layer shape indicator */}
+                {placedShape && (
+                  <div className="absolute inset-0 bg-indigo-500 bg-opacity-40 flex items-center justify-center z-10">
+                    <span className="text-xs font-bold text-white">
+                      {placedShape.cardValue}{getSuitSymbol(placedShape.cardSuit)}
+                    </span>
+                  </div>
+                )}
 
                 {/* Wall indicators */}
                 {cell.walls.top && <div className="absolute top-0 left-0 right-0 h-1 bg-gray-800"></div>}
