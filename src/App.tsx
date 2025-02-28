@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Download, Upload, Save, Trash2, RefreshCw, Grid } from 'lucide-react';
+import { Download, Upload, Save, Trash2, RefreshCw, Grid, Camera } from 'lucide-react';
 import BoardDesigner from './components/BoardDesigner';
 import ActionShapes from './components/ActionShapes';
 import CardDrawSimulator from './components/CardDrawSimulator';
 import { CellType, ColorRequirement, Board, ActionShape, PlacedShape, CardValue } from './types';
 import { generateRandomBoard } from './utils/boardGenerator';
 import { placeShapeOnBoard } from './utils/gameLogic';
+import { exportBoardAsPNG } from './utils/imageExport';
 
 function App() {
   const [boardSize, setBoardSize] = useState<number>(16);
@@ -205,6 +206,42 @@ function App() {
     }
   };
 
+  // Add a new function to handle saving the board as PNG
+  const handleSaveAsImage = async () => {
+    try {
+      // Show loading state
+      const loadingToast = document.createElement('div');
+      loadingToast.className = 'fixed top-4 right-4 bg-blue-600 text-white px-4 py-2 rounded shadow-lg z-50';
+      loadingToast.textContent = 'Generating image...';
+      document.body.appendChild(loadingToast);
+
+      // Generate the image (this might take a moment)
+      const dataUrl = await exportBoardAsPNG(board);
+
+      // Create a download link
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `${currentBoardName.replace(/\s+/g, '_')}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      // Remove loading toast and show success
+      document.body.removeChild(loadingToast);
+      const successToast = document.createElement('div');
+      successToast.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50';
+      successToast.textContent = 'Image saved successfully!';
+      document.body.appendChild(successToast);
+
+      // Remove success toast after 2 seconds
+      setTimeout(() => {
+        document.body.removeChild(successToast);
+      }, 2000);
+    } catch (error) {
+      alert('Error saving image: ' + error);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       <header className="bg-indigo-700 text-white p-4 shadow-md">
@@ -239,6 +276,13 @@ function App() {
                 className="hidden"
               />
             </label>
+            {/* Add the new Save as PNG button */}
+            <button
+              onClick={handleSaveAsImage}
+              className="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded flex items-center"
+            >
+              <Camera size={18} className="mr-1" /> Save as PNG
+            </button>
           </div>
         </div>
       </header>
