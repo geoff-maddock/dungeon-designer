@@ -65,6 +65,7 @@ function App() {
     [key in CellType | ColorRequirement]?: number;
   }>({
     [CellType.Key]: 3,
+    [CellType.Lock]: 3,
     [CellType.Supplies]: 3,
     [CellType.Mana]: 3,
     [CellType.Encounter]: 4,
@@ -484,6 +485,15 @@ function App() {
                   className={`p-2 rounded ${selectedTool === CellType.Key && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
                 >
                   Key
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedTool(CellType.Lock);
+                    setWallToolActive(false);
+                  }}
+                  className={`p-2 rounded ${selectedTool === CellType.Lock && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                >
+                  Lock
                 </button>
                 <button
                   onClick={() => {

@@ -115,6 +115,8 @@ export const generateRandomBoard = (size: number, options?: RandomBoardOptions):
 
     // Add resource requirements
     addRandomCells(board, CellType.Key, 3);
+    // Add locks
+    addRandomCells(board, CellType.Lock, 3);
     addRandomCells(board, CellType.Supplies, 3);
     addRandomCells(board, CellType.Mana, 3);
 

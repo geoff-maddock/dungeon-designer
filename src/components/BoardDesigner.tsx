@@ -90,6 +90,9 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
       case CellType.Relic:
         description = 'Relic - Primary objective';
         break;
+      case CellType.Lock:
+        description = 'Lock - Requires a key to pass through';
+        break;
       default:
         description = '';
     }
@@ -123,6 +126,8 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
         return <span className="text-amber-600" style={outlineStyle}>💎</span>;
       case CellType.Relic:
         return <span className="text-indigo-600" style={outlineStyle}>🏆</span>;
+      case CellType.Lock:
+        return <span className="text-gray-700" style={outlineStyle}>🔒</span>;
       default:
         return '';
     }

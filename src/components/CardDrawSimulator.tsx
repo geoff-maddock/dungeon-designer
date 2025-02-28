@@ -239,6 +239,9 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
             case CellType.Key:
               actions.push("Picked up a Key");
               break;
+            case CellType.Lock:
+              actions.push("Unlocked a Lock");
+              break;
             case CellType.Supplies:
               actions.push("Collected Supplies");
               break;

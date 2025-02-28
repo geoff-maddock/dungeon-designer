@@ -7,7 +7,8 @@ export enum CellType {
   Mana = 'mana',
   Encounter = 'encounter',
   Treasure = 'treasure',
-  Relic = 'relic'
+  Relic = 'relic',
+  Lock = 'lock'  // Add new Lock type
 }
 
 export enum ColorRequirement {
