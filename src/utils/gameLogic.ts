@@ -1,4 +1,4 @@
-import { Board, CellType, PlacedShape } from '../types';
+import { Board, CellType, PlacedShape, CardValue } from '../types';
 import { CardDraw } from '../types';
 
 // Update findValidPlacement to ensure the adjacency rule is enforced

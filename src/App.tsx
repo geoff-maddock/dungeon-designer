@@ -3,7 +3,7 @@ import { Download, Upload, Save, Trash2, RefreshCw, Grid } from 'lucide-react';
 import BoardDesigner from './components/BoardDesigner';
 import ActionShapes from './components/ActionShapes';
 import CardDrawSimulator from './components/CardDrawSimulator';
-import { CellType, ColorRequirement, Board, ActionShape, PlacedShape } from './types';
+import { CellType, ColorRequirement, Board, ActionShape, PlacedShape, CardValue } from './types';
 import { generateRandomBoard } from './utils/boardGenerator';
 import { placeShapeOnBoard } from './utils/gameLogic';
 
