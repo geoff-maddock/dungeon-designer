@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { CardValue, CardDraw, Board, ActionShape, PlacedShape, CellType } from '../types';
-import { findValidPlacement, rotateShape, createStandardDeck, shuffleDeck } from '../utils/gameLogic';
+import {
+  findValidPlacement,
+  rotateShape,
+  flipShapeHorizontal, // Add this
+  flipShapeVertical,   // Add this
+  createStandardDeck,
+  shuffleDeck
+} from '../utils/gameLogic';
 
 interface CardDrawSimulatorProps {
   board: Board;
@@ -112,35 +119,83 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
       return;
     }
 
-    // Try each shape with different rotations
+    // Try each shape with different orientations
     for (const shapeObj of matchingShapes) {
-      // Try original orientation
       let shape = shapeObj.shape;
-      let placement = findValidPlacement(board, shape, placedShapes);
+      let placement: { row: number, col: number } | null = null;
+      let transformations: string[] = [];
 
-      // If not found, try rotating 90 degrees
-      if (!placement) {
-        shape = rotateShape(shape);
-        placement = findValidPlacement(board, shape, placedShapes);
+      // Original orientation
+      placement = findValidPlacement(board, shape, placedShapes);
+      if (placement) {
+        transformations.push("original");
       }
 
-      // If not found, try rotating 180 degrees
+      // Try all possible orientations (4 rotations × 2 flips)
+      // First, try rotations of the original shape
       if (!placement) {
+        // Rotate 90°
         shape = rotateShape(shape);
         placement = findValidPlacement(board, shape, placedShapes);
+        if (placement) transformations.push("rotated 90°");
       }
 
-      // If not found, try rotating 270 degrees
       if (!placement) {
+        // Rotate 180° (90° twice)
         shape = rotateShape(shape);
         placement = findValidPlacement(board, shape, placedShapes);
+        if (placement) transformations.push("rotated 180°");
+      }
+
+      if (!placement) {
+        // Rotate 270° (90° three times)
+        shape = rotateShape(shape);
+        placement = findValidPlacement(board, shape, placedShapes);
+        if (placement) transformations.push("rotated 270°");
+      }
+
+      // Now try the horizontal flip
+      if (!placement) {
+        // Reset to original shape and flip horizontally
+        shape = flipShapeHorizontal(shapeObj.shape);
+        placement = findValidPlacement(board, shape, placedShapes);
+        if (placement) transformations.push("flipped horizontally");
+      }
+
+      if (!placement) {
+        // Rotate flipped shape 90°
+        shape = rotateShape(shape);
+        placement = findValidPlacement(board, shape, placedShapes);
+        if (placement) transformations.push("flipped horizontally, rotated 90°");
+      }
+
+      if (!placement) {
+        // Rotate flipped shape 180°
+        shape = rotateShape(shape);
+        placement = findValidPlacement(board, shape, placedShapes);
+        if (placement) transformations.push("flipped horizontally, rotated 180°");
+      }
+
+      if (!placement) {
+        // Rotate flipped shape 270°
+        shape = rotateShape(shape);
+        placement = findValidPlacement(board, shape, placedShapes);
+        if (placement) transformations.push("flipped horizontally, rotated 270°");
+      }
+
+      // Finally, try the vertical flip (which is different from horizontal flip + 180° rotation)
+      if (!placement) {
+        // Reset to original shape and flip vertically
+        shape = flipShapeVertical(shapeObj.shape);
+        placement = findValidPlacement(board, shape, placedShapes);
+        if (placement) transformations.push("flipped vertically");
       }
 
       if (placement) {
         // Process cell actions for each covered cell
         const actionsMessage = resolveCellActions(board, shape, placement.row, placement.col);
 
-        setMessage(`Placed shape for ${card.value} of ${card.suit}. ${actionsMessage}`);
+        setMessage(`Placed shape for ${card.value} of ${card.suit} (${transformations[0]}). ${actionsMessage}`);
 
         // Record the placed shape
         const newPlacedShape: PlacedShape = {
@@ -166,7 +221,7 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
       }
     }
 
-    setMessage(`Drew ${card.value} of ${card.suit} - No valid placement found!`);
+    setMessage(`Drew ${card.value} of ${card.suit} - No valid placement found even with rotations and flips.`);
   };
 
   // Add this helper function to resolve cell actions

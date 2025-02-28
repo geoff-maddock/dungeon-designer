@@ -90,6 +90,22 @@ export const rotateShape = (shape: number[][]): number[][] => {
   return rotated;
 };
 
+// Add this function to src/utils/gameLogic.ts
+// Horizontally flip a shape
+export const flipShapeHorizontal = (shape: number[][]): number[][] => {
+  const flipped = [];
+  for (let r = 0; r < shape.length; r++) {
+    flipped.push([...shape[r]].reverse());
+  }
+  return flipped;
+};
+
+// Vertically flip a shape
+export const flipShapeVertical = (shape: number[][]): number[][] => {
+  const flipped = [...shape].reverse();
+  return flipped;
+};
+
 // Removed unused findTraversedCells function
 
 // Update canPlaceShapeAt to check for overlaps with existing shapes
