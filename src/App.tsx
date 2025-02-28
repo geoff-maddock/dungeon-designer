@@ -30,30 +30,31 @@ function App() {
   const [placedShapes, setPlacedShapes] = useState<PlacedShape[]>([]);
 
   const [actionShapes, setActionShapes] = useState<ActionShape[]>([
-    // Level 1 shapes (2 squares)
-    { id: 1, value: 1, shape: [[1, 1]], cardValues: ['2', '3'] },
-    { id: 2, value: 1, shape: [[1], [1]], cardValues: ['2', '3'] },
-    { id: 3, value: 1, shape: [[1, 0], [1, 1]], cardValues: ['2', '3'] },
+    // Level 1 shapes (1, 2 squares)
+    { id: 1, value: 1, shape: [[1]], cardValues: ['2', '3', '4'] },
+    { id: 2, value: 1, shape: [[1], [1]], cardValues: ['2', '3', '4'] },
 
     // Level 2 shapes (3 squares)
-    { id: 4, value: 2, shape: [[1, 1, 1]], cardValues: ['4', '5'] },
-    { id: 5, value: 2, shape: [[1, 1], [1, 0]], cardValues: ['4', '5'] },
-    { id: 6, value: 2, shape: [[1, 0], [1, 1], [0, 1]], cardValues: ['4', '5'] },
+    { id: 4, value: 2, shape: [[1, 1, 1]], cardValues: ['5', '6'] },
+    { id: 5, value: 2, shape: [[1, 1], [1, 0]], cardValues: ['5', '6'] },
+    { id: 6, value: 2, shape: [[1, 1], [1, 1]], cardValues: ['5', '6'] },
 
     // Level 3 shapes (4 squares)
-    { id: 7, value: 3, shape: [[1, 1], [1, 1]], cardValues: ['6', '7', '8'] },
-    { id: 8, value: 3, shape: [[1, 1, 1, 1]], cardValues: ['6', '7', '8'] },
-    { id: 9, value: 3, shape: [[1, 1], [0, 1], [0, 1]], cardValues: ['6', '7', '8'] },
+    { id: 7, value: 3, shape: [[1, 1, 1], [1, 0]], cardValues: ['7', '8'] },
+    { id: 8, value: 3, shape: [[1, 1, 1, 1]], cardValues: ['7', '8'] },
+    { id: 9, value: 3, shape: [[0, 1], [1, 1], [1, 0]], cardValues: ['7', '8'] },
 
     // Level 4 shapes (5 squares)
-    { id: 10, value: 4, shape: [[1, 1, 1], [1, 0, 1]], cardValues: ['9', '10'] },
-    { id: 11, value: 4, shape: [[1, 1, 1], [1, 1, 0]], cardValues: ['9', '10'] },
+    { id: 10, value: 4, shape: [[1, 1, 1, 1, 1]], cardValues: ['9', '10'] },
+    { id: 11, value: 4, shape: [[1, 1, 1, 1], [1, 0, 0, 0]], cardValues: ['9', '10'] },
     { id: 12, value: 4, shape: [[0, 1, 0], [1, 1, 1], [0, 1, 0]], cardValues: ['9', '10'] },
+    { id: 13, value: 4, shape: [[0, 1, 1], [0, 1, 0], [1, 1, 0]], cardValues: ['9', '10'] },
 
     // Level 5 shapes (6 squares)
-    { id: 13, value: 5, shape: [[1, 1, 1], [1, 1, 1]], cardValues: ['A'] },
-    { id: 14, value: 5, shape: [[1, 1, 1, 1, 1, 1]], cardValues: ['A'] },
-    { id: 15, value: 5, shape: [[1, 1], [1, 1], [1, 1]], cardValues: ['A'] },
+    { id: 14, value: 5, shape: [[1, 1, 1, 1, 1], [1, 0, 0, 0, 0]], cardValues: ['A'] },
+    { id: 15, value: 5, shape: [[1, 1, 1, 1, 1, 1]], cardValues: ['A'] },
+    { id: 16, value: 5, shape: [[1, 1, 1], [1, 1, 1]], cardValues: ['A'] },
+    { id: 17, value: 5, shape: [[1, 1], [1, 1], [1, 1]], cardValues: ['A'] },
   ]);
 
   const [savedBoards, setSavedBoards] = useState<{ name: string, board: Board }[]>([]);
@@ -288,7 +289,7 @@ function App() {
       </header>
 
       <main className="container mx-auto p-4 flex-grow flex flex-col md:flex-row gap-4">
-        <div className="w-full md:w-3/4 bg-white rounded-lg shadow-md p-4">
+        <div className="w-full md:w-2/3 bg-white rounded-lg shadow-md p-4">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">Dungeon Board Designer</h2>
             <div className="flex items-center space-x-2">
@@ -325,7 +326,7 @@ function App() {
           />
         </div>
 
-        <div className="w-full md:w-1/4 space-y-4">
+        <div className="w-full md:w-1/3 space-y-4">
           <div className="bg-white rounded-lg shadow-md p-4">
             <h2 className="text-lg font-semibold mb-3">Tools</h2>
 
