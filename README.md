@@ -15,6 +15,19 @@ Dungeon Designer is a web-based tool for creating and managing 2D game boards fo
 - Add color requirements to cells (red, orange, yellow, green, blue, purple)
 - Create wall boundaries between cells
 
+### Cell Types
+
+- **Empty**: Basic traversable space
+- **Wall**: Impassable barrier
+- **Entrance**: Starting point for the dungeon
+- **Key**: Required to unlock Locks
+- **Lock**: Barrier that requires a Key to pass
+- **Supplies**: Resources for the journey
+- **Mana**: Magical energy resource
+- **Encounter**: Enemy or challenge
+- **Treasure**: Valuable reward
+- **Relic**: Primary objective
+
 ### Card-Based Gameplay
 - Simulates a card drawing system using standard playing cards
 - Cards trigger the placement of predetermined shapes on the board

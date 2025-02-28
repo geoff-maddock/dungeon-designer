@@ -4,7 +4,7 @@ import BoardDesigner from './components/BoardDesigner';
 import ActionShapes from './components/ActionShapes';
 import CardDrawSimulator from './components/CardDrawSimulator';
 import { CellType, ColorRequirement, Board, ActionShape, PlacedShape, CardValue } from './types';
-import { generateRandomBoard } from './utils/boardGenerator';
+import { generateRandomBoard, generateAdvancedBoard } from './utils/boardGenerator';
 import { placeShapeOnBoard } from './utils/gameLogic';
 import { exportBoardAsPNG } from './utils/imageExport';
 import RandomBoardSettings from './components/RandomBoardSettings';
@@ -329,6 +329,34 @@ function App() {
     const toast = document.createElement('div');
     toast.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50';
     toast.textContent = 'True random board has been generated';
+    document.body.appendChild(toast);
+
+    // Remove message after 2 seconds
+    setTimeout(() => {
+      document.body.removeChild(toast);
+    }, 2000);
+  };
+
+  // Add this new function to the App component
+  const handleGenerateAdvancedBoard = () => {
+    const options = {
+      cellTypeCounts: Object.fromEntries(
+        Object.entries(randomBoardSettings).filter(([key]) => Object.values(CellType).includes(key as CellType))
+      ),
+      colorRequirementCounts: Object.fromEntries(
+        Object.entries(randomBoardSettings).filter(([key]) => Object.values(ColorRequirement).includes(key as ColorRequirement))
+      ),
+      wallPercentage: wallPercentage
+    };
+
+    const newBoard = generateAdvancedBoard(boardSize, options);
+    setBoard(newBoard);
+    setShowRandomSettings(false);
+
+    // Show confirmation message
+    const toast = document.createElement('div');
+    toast.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50';
+    toast.textContent = 'Advanced board has been generated with improved maze layout';
     document.body.appendChild(toast);
 
     // Remove message after 2 seconds
@@ -705,6 +733,7 @@ function App() {
           onClose={() => setShowRandomSettings(false)}
           onGenerate={handleGenerateRandomBoard}
           onTrueRandom={handleTrueRandomBoard}  // Add this prop
+          onAdvancedGenerate={handleGenerateAdvancedBoard} // Add this new prop
         />
       )}
     </div>

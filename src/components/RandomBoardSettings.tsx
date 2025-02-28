@@ -1,6 +1,6 @@
 import React from 'react';
 import { CellType, ColorRequirement } from '../types';
-import { Shuffle } from 'lucide-react';
+import { Shuffle, Grid, MapPin } from 'lucide-react';
 
 interface RandomBoardSettingsProps {
     settings: {
@@ -11,7 +11,8 @@ interface RandomBoardSettingsProps {
     onWallCountChange: (count: number) => void;
     onClose: () => void;
     onGenerate: () => void;
-    onTrueRandom: () => void;  // New prop for true random generation
+    onTrueRandom: () => void;
+    onAdvancedGenerate: () => void; // Add this new prop
 }
 
 const RandomBoardSettings: React.FC<RandomBoardSettingsProps> = ({
@@ -21,7 +22,8 @@ const RandomBoardSettings: React.FC<RandomBoardSettingsProps> = ({
     onWallCountChange,
     onClose,
     onGenerate,
-    onTrueRandom  // Add this prop
+    onTrueRandom,
+    onAdvancedGenerate // Add this prop
 }) => {
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -98,6 +100,12 @@ const RandomBoardSettings: React.FC<RandomBoardSettingsProps> = ({
 
                 <div className="mt-6 flex justify-end space-x-2">
                     <button
+                        onClick={onAdvancedGenerate} // Add this new button
+                        className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded flex items-center"
+                    >
+                        <MapPin className="mr-1" size={18} /> Generate Maze
+                    </button>
+                    <button
                         onClick={onTrueRandom}
                         className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded flex items-center"
                     >
@@ -113,7 +121,7 @@ const RandomBoardSettings: React.FC<RandomBoardSettingsProps> = ({
                         onClick={onGenerate}
                         className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded"
                     >
-                        Generate Board
+                        <Grid className="mr-1 inline" size={18} /> Standard Board
                     </button>
                 </div>
             </div>
