@@ -20,6 +20,15 @@ export enum ColorRequirement {
   Purple = 'purple'
 }
 
+// Add to src/types.ts
+export interface PlacedShape {
+  shape: number[][];
+  startRow: number;
+  startCol: number;
+  cardValue: CardValue;
+  cardSuit: string;
+}
+
 export interface Cell {
   type: CellType;
   colorRequirement: ColorRequirement;
@@ -29,6 +38,7 @@ export interface Cell {
     bottom: boolean;
     left: boolean;
   };
+  traversed?: boolean; // Add this property
 }
 
 export type Board = Cell[][];
@@ -40,8 +50,8 @@ export interface ActionShape {
   cardValues: string[];
 }
 
-export type CardValue = 
-  | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' 
+export type CardValue =
+  | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10'
   | 'J' | 'Q' | 'K' | 'A';
 
 export interface CardDraw {
