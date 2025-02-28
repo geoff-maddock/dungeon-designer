@@ -107,6 +107,10 @@ const drawCellIcon = (ctx: CanvasRenderingContext2D, type: CellType, x: number, 
             ctx.fillStyle = '#cc9900';
             ctx.fillText('🔑', center.x, center.y);
             break;
+        case CellType.Lock:
+            ctx.fillStyle = '#505050';
+            ctx.fillText('🔒', center.x, center.y);
+            break;
         case CellType.Supplies:
             ctx.fillStyle = '#0066cc';
             ctx.fillText('🎒', center.x, center.y);
