@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, Upload, Save, Trash2, RefreshCw, Grid, Camera } from 'lucide-react';
+import { Download, Upload, Save, Trash2, RefreshCw, Grid, Camera, Settings } from 'lucide-react';
 import BoardDesigner from './components/BoardDesigner';
 import ActionShapes from './components/ActionShapes';
 import CardDrawSimulator from './components/CardDrawSimulator';
@@ -7,6 +7,7 @@ import { CellType, ColorRequirement, Board, ActionShape, PlacedShape, CardValue 
 import { generateRandomBoard } from './utils/boardGenerator';
 import { placeShapeOnBoard } from './utils/gameLogic';
 import { exportBoardAsPNG } from './utils/imageExport';
+import RandomBoardSettings from './components/RandomBoardSettings';
 
 function App() {
   const [boardSize, setBoardSize] = useState<number>(16);
@@ -59,6 +60,24 @@ function App() {
 
   const [savedBoards, setSavedBoards] = useState<{ name: string, board: Board }[]>([]);
   const [currentBoardName, setCurrentBoardName] = useState<string>('Untitled Board');
+  const [showRandomSettings, setShowRandomSettings] = useState<boolean>(false);
+  const [randomBoardSettings, setRandomBoardSettings] = useState<{
+    [key in CellType | ColorRequirement]?: number;
+  }>({
+    [CellType.Key]: 3,
+    [CellType.Supplies]: 3,
+    [CellType.Mana]: 3,
+    [CellType.Encounter]: 4,
+    [CellType.Treasure]: 4,
+    [CellType.Relic]: 6,
+    [ColorRequirement.Red]: 2,
+    [ColorRequirement.Orange]: 2,
+    [ColorRequirement.Yellow]: 2,
+    [ColorRequirement.Green]: 2,
+    [ColorRequirement.Blue]: 2,
+    [ColorRequirement.Purple]: 2,
+  });
+  const [wallPercentage, setWallPercentage] = useState<number>(15);
 
   const handleCellClick = (row: number, col: number) => {
     const newBoard = [...board];
@@ -117,8 +136,19 @@ function App() {
   };
 
   const handleGenerateRandomBoard = () => {
-    const newBoard = generateRandomBoard(boardSize);
+    const options = {
+      cellTypeCounts: Object.fromEntries(
+        Object.entries(randomBoardSettings).filter(([key]) => Object.values(CellType).includes(key as CellType))
+      ),
+      colorRequirementCounts: Object.fromEntries(
+        Object.entries(randomBoardSettings).filter(([key]) => Object.values(ColorRequirement).includes(key as ColorRequirement))
+      ),
+      wallPercentage: wallPercentage
+    };
+
+    const newBoard = generateRandomBoard(boardSize, options);
     setBoard(newBoard);
+    setShowRandomSettings(false);
   };
 
   const handleExportBoard = () => {
@@ -243,6 +273,69 @@ function App() {
     }
   };
 
+  // Add these helper functions
+  const handleRandomSettingChange = (type: CellType | ColorRequirement, value: number) => {
+    setRandomBoardSettings(prev => ({
+      ...prev,
+      [type]: value
+    }));
+  };
+
+  const handleWallPercentageChange = (value: number) => {
+    setWallPercentage(Math.max(0, Math.min(100, value)));
+  };
+
+  // Add this function in App.tsx
+  const handleResetBoard = () => {
+    // Create a fresh empty board
+    const initialBoard: Board = Array(boardSize).fill(null).map(() =>
+      Array(boardSize).fill(null).map(() => ({
+        type: CellType.Empty,
+        colorRequirement: ColorRequirement.None,
+        walls: { top: false, right: false, bottom: false, left: false }
+      }))
+    );
+
+    // Set entrance at default position
+    initialBoard[boardSize - 1][Math.floor(boardSize / 2)].type = CellType.Entrance;
+
+    // Reset the board
+    setBoard(initialBoard);
+
+    // Reset placed shapes
+    setPlacedShapes([]);
+
+    // Show confirmation message
+    const toast = document.createElement('div');
+    toast.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50';
+    toast.textContent = 'Board has been reset to initial state';
+    document.body.appendChild(toast);
+
+    // Remove message after 2 seconds
+    setTimeout(() => {
+      document.body.removeChild(toast);
+    }, 2000);
+  };
+
+  // Add a new function for true random generation
+  const handleTrueRandomBoard = () => {
+    // Generate board without using the settings
+    const newBoard = generateRandomBoard(boardSize);
+    setBoard(newBoard);
+    setShowRandomSettings(false);
+
+    // Show confirmation message
+    const toast = document.createElement('div');
+    toast.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50';
+    toast.textContent = 'True random board has been generated';
+    document.body.appendChild(toast);
+
+    // Remove message after 2 seconds
+    setTimeout(() => {
+      document.body.removeChild(toast);
+    }, 2000);
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       <header className="bg-indigo-700 text-white p-4 shadow-md">
@@ -284,6 +377,13 @@ function App() {
             >
               <Camera size={18} className="mr-1" /> Save as PNG
             </button>
+            {/* Add the new Settings button */}
+            <button
+              onClick={() => setShowRandomSettings(true)}
+              className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded flex items-center"
+            >
+              <Settings size={18} className="mr-1" /> Settings
+            </button>
           </div>
         </div>
       </header>
@@ -292,17 +392,32 @@ function App() {
         <div className="w-full md:w-2/3 bg-white rounded-lg shadow-md p-4">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">Dungeon Board Designer</h2>
+            {/* Replace the Generate Random button with this */}
             <div className="flex items-center space-x-2">
               <button
-                onClick={handleGenerateRandomBoard}
+                onClick={handleResetBoard}
+                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded flex items-center"
+              >
+                <RefreshCw size={18} className="mr-1" /> Reset Board
+              </button>
+              <button
+                onClick={() => setShowRandomSettings(true)}
                 className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded flex items-center"
               >
-                <RefreshCw size={18} className="mr-1" /> Generate Random
+                <Settings size={18} className="mr-1" /> Board Settings
               </button>
-              <div className="flex items-center">
+              <button
+                onClick={handleGenerateRandomBoard}
+                className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded flex items-center"
+              >
+                <Grid size={18} className="mr-1" /> Generate Board
+              </button>
+
+              <div className="flex items-center ml-2">
                 <button
                   onClick={() => handleResizeBoard(boardSize - 1)}
                   className="bg-gray-300 hover:bg-gray-400 px-2 py-1 rounded-l"
+                  disabled={boardSize <= 8}
                 >
                   -
                 </button>
@@ -312,6 +427,7 @@ function App() {
                 <button
                   onClick={() => handleResizeBoard(boardSize + 1)}
                   className="bg-gray-300 hover:bg-gray-400 px-2 py-1 rounded-r"
+                  disabled={boardSize >= 24}
                 >
                   +
                 </button>
@@ -568,6 +684,19 @@ function App() {
       <footer className="bg-gray-800 text-white p-4 text-center">
         <p>Tabletop Game Board Designer &copy; 2025</p>
       </footer>
+
+      {/* Add the RandomBoardSettings component */}
+      {showRandomSettings && (
+        <RandomBoardSettings
+          settings={randomBoardSettings}
+          wallCount={wallPercentage}
+          onSettingChange={handleRandomSettingChange}
+          onWallCountChange={handleWallPercentageChange}
+          onClose={() => setShowRandomSettings(false)}
+          onGenerate={handleGenerateRandomBoard}
+          onTrueRandom={handleTrueRandomBoard}  // Add this prop
+        />
+      )}
     </div>
   );
 }
