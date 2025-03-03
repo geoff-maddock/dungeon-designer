@@ -4,7 +4,7 @@ import { Board, CellType, ColorRequirement, PlacedShape, CardValue } from '../ty
 interface BoardDesignerProps {
   board: Board;
   onCellClick: (row: number, col: number) => void;
-  placedShapes?: PlacedShape[]; // Add this prop
+  placedShapes?: PlacedShape[];
 }
 
 const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, placedShapes = [] }) => {
@@ -36,10 +36,6 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
   };
 
   const getColorText = (colorRequirement: ColorRequirement): JSX.Element | string => {
-    // const outlineStyle = {
-    //   textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000'
-    // };
-
     switch (colorRequirement) {
       case ColorRequirement.Red:
         return <span>R</span>;
@@ -133,7 +129,6 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
     }
   };
 
-  // Add this function to check if a cell has a placed shape
   const getPlacedShapeInfo = (row: number, col: number): { cardValue: CardValue, cardSuit: string } | null => {
     for (const shape of placedShapes) {
       for (let r = 0; r < shape.shape.length; r++) {
@@ -152,7 +147,6 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
     return null;
   };
 
-  // Add this helper function for suit symbols
   function getSuitSymbol(suit: string): string {
     switch (suit) {
       case 'hearts': return '♥';
@@ -163,34 +157,66 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
     }
   }
 
-  return (
-    <div className="overflow-auto">
-      <div className="grid gap-px bg-gray-300 border-2 border-gray-400 rounded"
-        style={{
-          gridTemplateColumns: `repeat(${board[0].length}, minmax(0, 1fr))`,
-          width: 'fit-content'
-        }}
-      >
-        {board.map((row, rowIndex) => (
-          row.map((cell, colIndex) => {
-            const hasWalls = cell.walls.top || cell.walls.right || cell.walls.bottom || cell.walls.left;
-            const placedShape = getPlacedShapeInfo(rowIndex, colIndex);
+  // New function to render the tooltip area
+  const renderTooltipArea = () => {
+    if (!hoveredCell) {
+      return (
+        <div className="p-4 h-full border rounded bg-gray-50 flex items-center justify-center">
+          <p className="text-gray-500 italic">Hover over a cell to see details</p>
+        </div>
+      );
+    }
 
-            return (
-              <div
-                key={`${rowIndex}-${colIndex}`}
-                className={`w-8 h-8 flex items-center justify-center text-sm font-bold cursor-pointer relative ${getCellColor(cell.type, cell.colorRequirement)}`}
-                onClick={() => onCellClick(rowIndex, colIndex)}
-                onMouseEnter={() => setHoveredCell({ row: rowIndex, col: colIndex })}
-                onMouseLeave={() => setHoveredCell(null)}
-              >
+    const { row, col } = hoveredCell;
+    const cell = board[row][col];
+    const hasWalls = cell.walls.top || cell.walls.right || cell.walls.bottom || cell.walls.left;
+    const placedShape = getPlacedShapeInfo(row, col);
+
+    return (
+      <div className="p-4 h-full border rounded bg-white">
+        <h3 className="font-semibold text-lg mb-3">Cell Information</h3>
+
+        <div className="space-y-2">
+          <div>
+            <span className="font-medium">Position:</span> Row {row + 1}, Column {col + 1}
+          </div>
+
+          <div>
+            <span className="font-medium">Type:</span> {getCellDescription(cell.type, cell.colorRequirement)}
+          </div>
+
+          {hasWalls && (
+            <div>
+              <span className="font-medium">Walls:</span>
+              <div className="flex space-x-2 mt-1">
+                {cell.walls.top && <span className="px-2 py-1 bg-gray-200 rounded">Top</span>}
+                {cell.walls.right && <span className="px-2 py-1 bg-gray-200 rounded">Right</span>}
+                {cell.walls.bottom && <span className="px-2 py-1 bg-gray-200 rounded">Bottom</span>}
+                {cell.walls.left && <span className="px-2 py-1 bg-gray-200 rounded">Left</span>}
+              </div>
+            </div>
+          )}
+
+          {placedShape && (
+            <div>
+              <span className="font-medium">Action Layer:</span>
+              <div className="mt-1 px-3 py-2 bg-indigo-100 rounded">
+                Card: {placedShape.cardValue} {getSuitSymbol(placedShape.cardSuit)} ({placedShape.cardSuit})
+              </div>
+            </div>
+          )}
+
+          {/* Preview of the cell */}
+          <div className="mt-4">
+            <span className="font-medium">Preview:</span>
+            <div className="mt-2 flex justify-center">
+              <div className={`w-12 h-12 flex items-center justify-center text-lg ${getCellColor(cell.type, cell.colorRequirement)} border-2 border-gray-400 rounded relative`}>
                 {getCellIconWithStyle(cell.type)}
                 {cell.type === CellType.Empty && getColorText(cell.colorRequirement)}
 
-                {/* Action layer shape indicator */}
                 {placedShape && (
-                  <div className="absolute inset-0 bg-indigo-500 bg-opacity-40 flex items-center justify-center z-10">
-                    <span className="text-xs font-bold text-white">
+                  <div className="absolute inset-0 bg-indigo-500 bg-opacity-40 flex items-center justify-center">
+                    <span className="text-sm font-bold text-white">
                       {placedShape.cardValue}{getSuitSymbol(placedShape.cardSuit)}
                     </span>
                   </div>
@@ -201,25 +227,63 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
                 {cell.walls.right && <div className="absolute top-0 right-0 bottom-0 w-1 bg-gray-800"></div>}
                 {cell.walls.bottom && <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-800"></div>}
                 {cell.walls.left && <div className="absolute top-0 left-0 bottom-0 w-1 bg-gray-800"></div>}
-
-                {/* Tooltip */}
-                {hoveredCell && hoveredCell.row === rowIndex && hoveredCell.col === colIndex && (
-                  <div className="absolute z-10 bg-black bg-opacity-80 text-white text-xs rounded py-1 px-2 -mt-8 whitespace-nowrap">
-                    {getCellDescription(cell.type, cell.colorRequirement)}
-                    {hasWalls && (
-                      <div className="mt-1">
-                        {cell.walls.top && <span className="mr-1">↑</span>}
-                        {cell.walls.right && <span className="mr-1">→</span>}
-                        {cell.walls.bottom && <span className="mr-1">↓</span>}
-                        {cell.walls.left && <span>←</span>}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
-            );
-          })
-        ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex gap-4">
+      <div className="overflow-auto">
+        <div className="grid gap-px bg-gray-300 border-2 border-gray-400 rounded"
+          style={{
+            gridTemplateColumns: `repeat(${board[0].length}, minmax(0, 1fr))`,
+            width: 'fit-content'
+          }}
+        >
+          {board.map((row, rowIndex) => (
+            row.map((cell, colIndex) => {
+              const hasWalls = cell.walls.top || cell.walls.right || cell.walls.bottom || cell.walls.left;
+              const placedShape = getPlacedShapeInfo(rowIndex, colIndex);
+
+              return (
+                <div
+                  key={`${rowIndex}-${colIndex}`}
+                  className={`w-8 h-8 flex items-center justify-center text-sm font-bold cursor-pointer relative ${getCellColor(cell.type, cell.colorRequirement)}`}
+                  onClick={() => onCellClick(rowIndex, colIndex)}
+                  onMouseEnter={() => setHoveredCell({ row: rowIndex, col: colIndex })}
+                  onMouseLeave={() => setHoveredCell(null)}
+                >
+                  {getCellIconWithStyle(cell.type)}
+                  {cell.type === CellType.Empty && getColorText(cell.colorRequirement)}
+
+                  {/* Action layer shape indicator */}
+                  {placedShape && (
+                    <div className="absolute inset-0 bg-indigo-500 bg-opacity-40 flex items-center justify-center z-10">
+                      <span className="text-xs font-bold text-white">
+                        {placedShape.cardValue}{getSuitSymbol(placedShape.cardSuit)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Wall indicators */}
+                  {cell.walls.top && <div className="absolute top-0 left-0 right-0 h-1 bg-gray-800"></div>}
+                  {cell.walls.right && <div className="absolute top-0 right-0 bottom-0 w-1 bg-gray-800"></div>}
+                  {cell.walls.bottom && <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-800"></div>}
+                  {cell.walls.left && <div className="absolute top-0 left-0 bottom-0 w-1 bg-gray-800"></div>}
+                </div>
+              );
+            })
+          ))}
+        </div>
+      </div>
+
+      {/* Tooltip area to the right */}
+      <div className="w-64 h-96">
+        {renderTooltipArea()}
       </div>
     </div>
   );

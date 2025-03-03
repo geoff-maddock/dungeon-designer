@@ -28,6 +28,8 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
   const [placedShapes, setPlacedShapes] = useState<PlacedShape[]>([]);
   const [deck, setDeck] = useState<CardDraw[]>([]);
   const [uncoveredCells, setUncoveredCells] = useState<number>(0);
+  const [unplaceableCount, setUnplaceableCount] = useState<number>(0);
+  const [lastFailureReason, setLastFailureReason] = useState<string>('');
 
   useEffect(() => {
     // Calculate total available cells (excluding walls)
@@ -92,6 +94,8 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
     setDrawnCards([]);
     setMessage('Deck has been reset. All placed shapes have been cleared.');
     setPlacedShapes([]);
+    setUnplaceableCount(0); // Reset the unplaceable count
+    setLastFailureReason(''); // Reset the failure reason
     initializeDeck(); // Re-initialize the deck
     onResetDeck();    // Call the parent's reset function
   };
@@ -118,6 +122,10 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
       setMessage(`No shapes available for card value ${card.value}`);
       return;
     }
+
+    // Track failure reasons for debugging
+    const failureReasons: string[] = [];
+    let isPlaced = false;
 
     // Try each shape with different orientations
     for (const shapeObj of matchingShapes) {
@@ -189,12 +197,12 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
         if (placement) found = true;
       }
 
-      // Try flipping vertically + rotations
-      // (Similar pattern as with horizontal flip)
-
       if (found && placement) {
+        // Process cell actions for each covered cell
+        const actionsMessage = resolveCellActions(board, shape, placement.row, placement.col);
+
         // Place the shape and return
-        setMessage(`Placed shape for ${card.value} of ${card.suit}`);
+        setMessage(`Placed shape for ${card.value} of ${card.suit}. ${actionsMessage}`);
 
         const newPlacedShape = {
           shape,
@@ -213,11 +221,20 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
             i === prev.length - 1 ? { ...c, isPlaced: true } : c
           )
         );
-        return;
+
+        return; // Shape successfully placed, exit the function
+      } else {
+        // If we couldn't place this shape, get diagnostic information
+        const reason = checkPlacementFailureReason(board, shapeObj.shape, placedShapes);
+        failureReasons.push(`Shape ${shapeObj.id}: ${reason}`);
       }
     }
 
-    setMessage(`Drew ${card.value} of ${card.suit} - No valid placement found!`);
+    // If we get here, no valid placement was found
+    setUnplaceableCount(prev => prev + 1);
+    const failureReason = failureReasons.length > 0 ? failureReasons[0] : "Unknown reason";
+    setLastFailureReason(failureReason);
+    setMessage(`Drew ${card.value} of ${card.suit} - No valid placement found! Reason: ${failureReason}`);
   };
 
   // Add this helper function to resolve cell actions
@@ -261,6 +278,149 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
     return actions.length > 0 ? `Actions: ${actions.join(', ')}` : '';
   };
 
+  const checkPlacementFailureReason = (board: Board, shape: number[][], placedShapes: PlacedShape[]): string => {
+    const size = board.length;
+
+    // Check if shape is too big for the board
+    if (shape.length > size || shape[0].length > size) {
+      return "Shape is too large for the board";
+    }
+
+    let adjacencyFound = false;
+    let overlapsEntrance = false;
+    let validPositionExists = false;
+
+    // Check for any valid position
+    for (let startRow = 0; startRow <= size - shape.length; startRow++) {
+      for (let startCol = 0; startCol <= size - shape[0].length; startCol++) {
+        // First check if the shape would fit at this position (no walls or overlaps)
+        let fits = true;
+        let currentOverlapsEntrance = false;
+
+        // Check if it fits (no walls or overlaps)
+        for (let r = 0; r < shape.length && fits; r++) {
+          for (let c = 0; c < shape[0].length && fits; c++) {
+            if (shape[r][c] === 1) {
+              const boardRow = startRow + r;
+              const boardCol = startCol + c;
+              const cellType = board[boardRow][boardCol].type;
+
+              // Check for entrance
+              if (cellType === CellType.Entrance) {
+                currentOverlapsEntrance = true;
+              }
+
+              // Check for wall
+              if (cellType === CellType.Wall) {
+                fits = false;
+                break;
+              }
+
+              // Check for overlap with existing shapes
+              for (const placedShape of placedShapes) {
+                const placedRow = boardRow - placedShape.startRow;
+                const placedCol = boardCol - placedShape.startCol;
+
+                if (
+                  placedRow >= 0 &&
+                  placedRow < placedShape.shape.length &&
+                  placedCol >= 0 &&
+                  placedCol < placedShape.shape[0].length &&
+                  placedShape.shape[placedRow][placedCol] === 1
+                ) {
+                  fits = false;
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        // If it fits, now check for adjacency
+        if (fits) {
+          validPositionExists = true;
+
+          // First shape needs to cover entrance
+          if (placedShapes.length === 0) {
+            if (currentOverlapsEntrance) {
+              return "Valid placement found";
+            }
+            continue; // Skip adjacency check for first shape if it doesn't cover entrance
+          }
+
+          overlapsEntrance = overlapsEntrance || currentOverlapsEntrance;
+
+          // Now check if any cell of the shape is adjacent to any cell of any existing shape
+          let isAdjacent = false;
+
+          // Check each cell of the shape
+          for (let r = 0; r < shape.length && !isAdjacent; r++) {
+            for (let c = 0; c < shape[0].length && !isAdjacent; c++) {
+              if (shape[r][c] === 1) {
+                const boardRow = startRow + r;
+                const boardCol = startCol + c;
+
+                // Check all four adjacent directions
+                const directions = [[-1, 0], [0, 1], [1, 0], [0, -1]];
+
+                for (const [dr, dc] of directions) {
+                  const adjRow = boardRow + dr;
+                  const adjCol = boardCol + dc;
+
+                  // Skip if out of bounds
+                  if (adjRow < 0 || adjRow >= size || adjCol < 0 || adjCol >= size) {
+                    continue;
+                  }
+
+                  // Check if adjacent to any existing placed shape
+                  for (const placedShape of placedShapes) {
+                    const placedRow = adjRow - placedShape.startRow;
+                    const placedCol = adjCol - placedShape.startCol;
+
+                    if (
+                      placedRow >= 0 &&
+                      placedRow < placedShape.shape.length &&
+                      placedCol >= 0 &&
+                      placedCol < placedShape.shape[0].length &&
+                      placedShape.shape[placedRow][placedCol] === 1
+                    ) {
+                      isAdjacent = true;
+                      adjacencyFound = true;
+                      break;
+                    }
+                  }
+
+                  if (isAdjacent) break;
+                }
+              }
+            }
+          }
+
+          // If this position is valid and adjacent, we've found a valid placement
+          if (isAdjacent) {
+            return "Valid placement found";
+          }
+        }
+      }
+    }
+
+    // Determine the reason why no valid placement was found
+    if (!validPositionExists) {
+      return "No position exists where the shape fits without overlapping walls or existing shapes";
+    }
+
+    if (placedShapes.length === 0 && !overlapsEntrance) {
+      return "First shape must cover the entrance";
+    }
+
+    if (!adjacencyFound) {
+      return "Shape must be adjacent to existing shapes";
+    }
+
+    // If we get here, we might have a wall boundary issue
+    return "Shape placement blocked by wall boundaries";
+  };
+
   const getCardColor = (suit: string) => {
     return suit === 'hearts' || suit === 'diamonds' ? 'text-red-600' : 'text-black';
   };
@@ -300,11 +460,27 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
             </button>
           </div>
         </div>
-        <div className="text-sm">
-          <span className="font-medium">Uncovered Cells: </span>
-          <span className="text-indigo-700 font-bold">{uncoveredCells}</span>
+        <div className="flex flex-col text-sm text-right">
+          <div>
+            <span className="font-medium">Uncovered Cells: </span>
+            <span className="text-indigo-700 font-bold">{uncoveredCells}</span>
+          </div>
+          <div>
+            <span className="font-medium">Unplaceable Shapes: </span>
+            <span className={`font-bold ${unplaceableCount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+              {unplaceableCount}
+            </span>
+          </div>
         </div>
       </div>
+
+      {/* Add additional info for the last failure reason if one exists */}
+      {lastFailureReason && (
+        <div className="mb-4 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+          <div className="font-semibold">Last Placement Failure:</div>
+          <div>{lastFailureReason}</div>
+        </div>
+      )}
 
       <div className="mb-4 flex gap-2">
         <button

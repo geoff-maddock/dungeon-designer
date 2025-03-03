@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Download, Upload, Save, Trash2, RefreshCw, Grid, Camera, Settings } from 'lucide-react';
 import BoardDesigner from './components/BoardDesigner';
 import ActionShapes from './components/ActionShapes';
@@ -58,7 +58,21 @@ function App() {
     { id: 17, value: 5, shape: [[1, 1], [1, 1], [1, 1]], cardValues: ['A'] },
   ]);
 
-  const [savedBoards, setSavedBoards] = useState<{ name: string, board: Board }[]>([]);
+  // Update the savedBoards state in App.tsx to load from localStorage
+  const [savedBoards, setSavedBoards] = useState<{ name: string, board: Board }[]>(() => {
+    // Try to load saved boards from localStorage on initial render
+    const savedData = localStorage.getItem('dungeonDesigner_savedBoards');
+    if (savedData) {
+      try {
+        return JSON.parse(savedData);
+      } catch (error) {
+        console.error("Failed to parse saved boards:", error);
+        return [];
+      }
+    }
+    return [];
+  });
+
   const [currentBoardName, setCurrentBoardName] = useState<string>('Untitled Board');
   const [showRandomSettings, setShowRandomSettings] = useState<boolean>(false);
   const [randomBoardSettings, setRandomBoardSettings] = useState<{
@@ -114,15 +128,31 @@ function App() {
   };
 
   const handleSaveBoard = () => {
+    const boardData = {
+      name: currentBoardName,
+      board: JSON.parse(JSON.stringify(board))
+    };
+
     const boardExists = savedBoards.findIndex(b => b.name === currentBoardName);
     if (boardExists >= 0) {
+      // Update existing board
       const newSavedBoards = [...savedBoards];
-      newSavedBoards[boardExists] = { name: currentBoardName, board: JSON.parse(JSON.stringify(board)) };
+      newSavedBoards[boardExists] = boardData;
       setSavedBoards(newSavedBoards);
     } else {
-      setSavedBoards([...savedBoards, { name: currentBoardName, board: JSON.parse(JSON.stringify(board)) }]);
+      // Add new board
+      setSavedBoards([...savedBoards, boardData]);
     }
-    alert(`Board "${currentBoardName}" saved!`);
+
+    // Show confirmation
+    const toast = document.createElement('div');
+    toast.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50';
+    toast.textContent = `Board "${currentBoardName}" saved!`;
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+      document.body.removeChild(toast);
+    }, 2000);
   };
 
   const handleLoadBoard = (index: number) => {
@@ -364,6 +394,11 @@ function App() {
       document.body.removeChild(toast);
     }, 2000);
   };
+
+  // Add a useEffect hook to save boards to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('dungeonDesigner_savedBoards', JSON.stringify(savedBoards));
+  }, [savedBoards]);
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
