@@ -15,6 +15,12 @@ Dungeon Designer is a web-based tool for creating and managing 2D game boards fo
 - Add color requirements to cells (red, orange, yellow, green, blue, purple)
 - Create wall boundaries between cells
 
+### Adventure Boards
+- Dungeon: Explore a dungeon, fight monsters, gain experience, find treasure and relics.
+- Tower: Encounter various magical energies and traps, accrue magic, and battle a powerful wizard at the top.
+- Forest: Gather resources, improve abilities, heal your character, sell for gold, and earn special bonuses. Beware of danger.
+- City: Visit various city establishments to earn bonuses based on the cards you drew or played, spend resources, and visit multiple times.
+
 ### Card-Based Gameplay
 - Simulates a card drawing system using standard playing cards
 - Cards trigger the placement of predetermined shapes on the board
@@ -134,18 +140,20 @@ Number of shapes: 4
 
 The production files will be generated in the dist folder.
 
-Technologies Used
-React 18 with TypeScript
-Vite for fast development and builds
-Tailwind CSS for styling
-Lucide React for icons
-HTML Canvas API for image export
-How to Play
-Design your dungeon by placing walls, special cells, and challenges
-Use the Card Draw Simulator to draw cards and place shapes on the board
-Traverse the dungeon by placing shapes that connect to the entrance
-Collect keys, supplies, mana, and treasures as you explore
-Avoid or resolve encounters
-Reach and collect the relics to complete the dungeon
-License
+## Technologies Used
+- React 18 with TypeScript
+- Vite for fast development and builds
+- Tailwind CSS for styling
+- Lucide React for icons
+- HTML Canvas API for image export
+
+## How to Play
+- Design your dungeon by placing walls, special cells, and challenges
+- Use the Card Draw Simulator to draw cards and place shapes on the board
+- Traverse the dungeon by placing shapes that connect to the entrance
+- Collect keys, supplies, mana, and treasures as you explore
+- Avoid or resolve encounters
+- Reach and collect the relics to complete the dungeon
+
+## License
 MIT
