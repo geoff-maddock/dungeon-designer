@@ -8,12 +8,13 @@ import { generateRandomBoard } from './utils/boardGenerator';
 import { placeShapeOnBoard } from './utils/gameLogic';
 import { exportBoardAsPNG } from './utils/imageExport';
 import RandomBoardSettings from './components/RandomBoardSettings';
-import { BrowserRouter as Router, Route, Switch, Link } from 'react-router-dom';
+
 import TowerBoard from './components/TowerBoard';
 import ForestBoard from './components/ForestBoard';
 import CityBoard from './components/CityBoard';
 
 function App() {
+  const [currentPage, setCurrentPage] = useState<'dungeon' | 'tower' | 'forest' | 'city'>('dungeon');
   const [boardSize, setBoardSize] = useState<number>(16);
   const [board, setBoard] = useState<Board>(() => {
     const initialBoard: Board = Array(16).fill(null).map(() =>
@@ -342,394 +343,393 @@ function App() {
   };
 
   return (
-    <Router>
-      <div className="min-h-screen bg-gray-100 flex flex-col">
-        <header className="bg-indigo-700 text-white p-4 shadow-md">
-          <div className="container mx-auto flex justify-between items-center">
-            <h1 className="text-2xl font-bold">Tabletop Game Board Designer</h1>
-            <div className="flex items-center space-x-4">
-              <input
-                type="text"
-                value={currentBoardName}
-                onChange={(e) => setCurrentBoardName(e.target.value)}
-                className="px-3 py-1 rounded text-black"
-                placeholder="Board Name"
-              />
-              <button
-                onClick={handleSaveBoard}
-                className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded flex items-center"
-              >
-                <Save size={18} className="mr-1" /> Save
-              </button>
-              <button
-                onClick={handleExportBoard}
-                className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded flex items-center"
-              >
-                <Download size={18} className="mr-1" /> Export
-              </button>
-              <label className="bg-orange-600 hover:bg-orange-700 px-3 py-1 rounded flex items-center cursor-pointer">
-                <Upload size={18} className="mr-1" /> Import
+    <>
+      {currentPage === 'dungeon' && (
+        <div className="min-h-screen bg-gray-100 flex flex-col">
+          <header className="bg-indigo-700 text-white p-4 shadow-md">
+            <div className="container mx-auto flex justify-between items-center">
+              <h1 className="text-2xl font-bold">Tabletop Game Board Designer</h1>
+              <div className="flex items-center space-x-4">
                 <input
-                  type="file"
-                  accept=".json"
-                  onChange={handleImportBoard}
-                  className="hidden"
+                  type="text"
+                  value={currentBoardName}
+                  onChange={(e) => setCurrentBoardName(e.target.value)}
+                  className="px-3 py-1 rounded text-black"
+                  placeholder="Board Name"
                 />
-              </label>
-              {/* Add the new Save as PNG button */}
-              <button
-                onClick={handleSaveAsImage}
-                className="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded flex items-center"
-              >
-                <Camera size={18} className="mr-1" /> Save as PNG
-              </button>
-              {/* Add the new Settings button */}
-              <button
-                onClick={() => setShowRandomSettings(true)}
-                className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded flex items-center"
-              >
-                <Settings size={18} className="mr-1" /> Settings
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <main className="container mx-auto p-4 flex-grow flex flex-col md:flex-row gap-4">
-          <div className="w-full md:w-2/3 bg-white rounded-lg shadow-md p-4">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">Dungeon Board Designer</h2>
-              {/* Replace the Generate Random button with this */}
-              <div className="flex items-center space-x-2">
                 <button
-                  onClick={handleResetBoard}
-                  className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded flex items-center"
+                  onClick={handleSaveBoard}
+                  className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded flex items-center"
                 >
-                  <RefreshCw size={18} className="mr-1" /> Reset Board
+                  <Save size={18} className="mr-1" /> Save
                 </button>
+                <button
+                  onClick={handleExportBoard}
+                  className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded flex items-center"
+                >
+                  <Download size={18} className="mr-1" /> Export
+                </button>
+                <label className="bg-orange-600 hover:bg-orange-700 px-3 py-1 rounded flex items-center cursor-pointer">
+                  <Upload size={18} className="mr-1" /> Import
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportBoard}
+                    className="hidden"
+                  />
+                </label>
+                {/* Add the new Save as PNG button */}
+                <button
+                  onClick={handleSaveAsImage}
+                  className="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded flex items-center"
+                >
+                  <Camera size={18} className="mr-1" /> Save as PNG
+                </button>
+                {/* Add the new Settings button */}
                 <button
                   onClick={() => setShowRandomSettings(true)}
-                  className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded flex items-center"
+                  className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded flex items-center"
                 >
-                  <Settings size={18} className="mr-1" /> Board Settings
+                  <Settings size={18} className="mr-1" /> Settings
                 </button>
-                <button
-                  onClick={handleGenerateRandomBoard}
-                  className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded flex items-center"
-                >
-                  <Grid size={18} className="mr-1" /> Generate Board
-                </button>
+              </div>
+            </div>
+          </header>
 
-                <div className="flex items-center ml-2">
+          <main className="container mx-auto p-4 flex-grow flex flex-col md:flex-row gap-4">
+            <div className="w-full md:w-2/3 bg-white rounded-lg shadow-md p-4">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Dungeon Board Designer</h2>
+                {/* Replace the Generate Random button with this */}
+                <div className="flex items-center space-x-2">
                   <button
-                    onClick={() => handleResizeBoard(boardSize - 1)}
-                    className="bg-gray-300 hover:bg-gray-400 px-2 py-1 rounded-l"
-                    disabled={boardSize <= 8}
+                    onClick={handleResetBoard}
+                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded flex items-center"
                   >
-                    -
+                    <RefreshCw size={18} className="mr-1" /> Reset Board
                   </button>
-                  <div className="bg-gray-200 px-3 py-1 flex items-center">
-                    <Grid size={16} className="mr-1" /> {boardSize}x{boardSize}
+                  <button
+                    onClick={() => setShowRandomSettings(true)}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded flex items-center"
+                  >
+                    <Settings size={18} className="mr-1" /> Board Settings
+                  </button>
+                  <button
+                    onClick={handleGenerateRandomBoard}
+                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded flex items-center"
+                  >
+                    <Grid size={18} className="mr-1" /> Generate Board
+                  </button>
+
+                  <div className="flex items-center ml-2">
+                    <button
+                      onClick={() => handleResizeBoard(boardSize - 1)}
+                      className="bg-gray-300 hover:bg-gray-400 px-2 py-1 rounded-l"
+                      disabled={boardSize <= 8}
+                    >
+                      -
+                    </button>
+                    <div className="bg-gray-200 px-3 py-1 flex items-center">
+                      <Grid size={16} className="mr-1" /> {boardSize}x{boardSize}
+                    </div>
+                    <button
+                      onClick={() => handleResizeBoard(boardSize + 1)}
+                      className="bg-gray-300 hover:bg-gray-400 px-2 py-1 rounded-r"
+                      disabled={boardSize >= 24}
+                    >
+                      +
+                    </button>
                   </div>
+                </div>
+              </div>
+
+              <BoardDesigner
+                board={board}
+                onCellClick={handleCellClick}
+                placedShapes={placedShapes}
+              />
+            </div>
+
+            <div className="w-full md:w-1/3 space-y-4">
+              <div className="bg-white rounded-lg shadow-md p-4">
+                <h2 className="text-lg font-semibold mb-3">Tools</h2>
+
+                <div className="mb-4">
+                  <h3 className="text-md font-medium mb-2">Cell Types</h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => {
+                        setSelectedTool(CellType.Empty);
+                        setWallToolActive(false);
+                      }}
+                      className={`p-2 rounded ${selectedTool === CellType.Empty && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Erase
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedTool(CellType.Wall);
+                        setWallToolActive(false);
+                      }}
+                      className={`p-2 rounded ${selectedTool === CellType.Wall && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Wall
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedTool(CellType.Entrance);
+                        setWallToolActive(false);
+                      }}
+                      className={`p-2 rounded ${selectedTool === CellType.Entrance && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Entrance
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedTool(CellType.Key);
+                        setWallToolActive(false);
+                      }}
+                      className={`p-2 rounded ${selectedTool === CellType.Key && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Key
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedTool(CellType.Lock);
+                        setWallToolActive(false);
+                      }}
+                      className={`p-2 rounded ${selectedTool === CellType.Lock && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Lock
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedTool(CellType.Supplies);
+                        setWallToolActive(false);
+                      }}
+                      className={`p-2 rounded ${selectedTool === CellType.Supplies && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Supplies
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedTool(CellType.Mana);
+                        setWallToolActive(false);
+                      }}
+                      className={`p-2 rounded ${selectedTool === CellType.Mana && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Mana
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedTool(CellType.Encounter);
+                        setWallToolActive(false);
+                      }}
+                      className={`p-2 rounded ${selectedTool === CellType.Encounter && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Encounter
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedTool(CellType.Treasure);
+                        setWallToolActive(false);
+                      }}
+                      className={`p-2 rounded ${selectedTool === CellType.Treasure && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Treasure
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedTool(CellType.Relic);
+                        setWallToolActive(false);
+                      }}
+                      className={`p-2 rounded ${selectedTool === CellType.Relic && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Relic
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <h3 className="text-md font-medium mb-2">Wall Placement</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => {
+                        setWallToolActive(true);
+                        setSelectedWall('top');
+                      }}
+                      className={`p-2 rounded ${wallToolActive && selectedWall === 'top' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Top Wall
+                    </button>
+                    <button
+                      onClick={() => {
+                        setWallToolActive(true);
+                        setSelectedWall('right');
+                      }}
+                      className={`p-2 rounded ${wallToolActive && selectedWall === 'right' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Right Wall
+                    </button>
+                    <button
+                      onClick={() => {
+                        setWallToolActive(true);
+                        setSelectedWall('bottom');
+                      }}
+                      className={`p-2 rounded ${wallToolActive && selectedWall === 'bottom' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Bottom Wall
+                    </button>
+                    <button
+                      onClick={() => {
+                        setWallToolActive(true);
+                        setSelectedWall('left');
+                      }}
+                      className={`p-2 rounded ${wallToolActive && selectedWall === 'left' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                    >
+                      Left Wall
+                    </button>
+                  </div>
+                </div>
+
+                <h3 className="text-lg font-semibold mt-4 mb-2">Color Requirements</h3>
+                <div className="grid grid-cols-3 gap-2 mb-2">
                   <button
-                    onClick={() => handleResizeBoard(boardSize + 1)}
-                    className="bg-gray-300 hover:bg-gray-400 px-2 py-1 rounded-r"
-                    disabled={boardSize >= 24}
+                    onClick={() => {
+                      setSelectedColor(ColorRequirement.None);
+                    }}
+                    className={`p-2 rounded ${selectedColor === ColorRequirement.None ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
                   >
-                    +
+                    None
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedColor(ColorRequirement.Red);
+                    }}
+                    className={`p-2 rounded ${selectedColor === ColorRequirement.Red ? 'bg-blue-100 border-2 border-blue-500' : 'bg-red-100'}`}
+                  >
+                    Red
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedColor(ColorRequirement.Orange);
+                    }}
+                    className={`p-2 rounded ${selectedColor === ColorRequirement.Orange ? 'bg-blue-100 border-2 border-blue-500' : 'bg-orange-100'}`}
+                  >
+                    Orange
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedColor(ColorRequirement.Yellow);
+                    }}
+                    className={`p-2 rounded ${selectedColor === ColorRequirement.Yellow ? 'bg-blue-100 border-2 border-blue-500' : 'bg-yellow-100'}`}
+                  >
+                    Yellow
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedColor(ColorRequirement.Green);
+                    }}
+                    className={`p-2 rounded ${selectedColor === ColorRequirement.Green ? 'bg-blue-100 border-2 border-blue-500' : 'bg-green-100'}`}
+                  >
+                    Green
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedColor(ColorRequirement.Blue);
+                    }}
+                    className={`p-2 rounded ${selectedColor === ColorRequirement.Blue ? 'bg-blue-100 border-2 border-blue-500' : 'bg-blue-100'}`}
+                  >
+                    Blue
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedColor(ColorRequirement.Purple);
+                    }}
+                    className={`p-2 rounded ${selectedColor === ColorRequirement.Purple ? 'bg-blue-100 border-2 border-blue-500' : 'bg-purple-100'}`}
+                  >
+                    Purple
                   </button>
                 </div>
               </div>
-            </div>
 
-            <BoardDesigner
-              board={board}
-              onCellClick={handleCellClick}
-              placedShapes={placedShapes}
+              <CardDrawSimulator
+                board={board}
+                actionShapes={actionShapes}
+                onPlaceShape={handlePlaceShape}
+                onResetDeck={handleResetDeck} // Add this new prop
+              />
+
+              <div className="bg-white rounded-lg shadow-md p-4">
+                <h2 className="text-lg font-semibold mb-3">Action Shapes</h2>
+                <ActionShapes shapes={actionShapes} />
+              </div>
+
+
+
+              <div className="bg-white rounded-lg shadow-md p-4">
+                <h2 className="text-lg font-semibold mb-3">Saved Boards</h2>
+                {savedBoards.length === 0 ? (
+                  <p className="text-gray-500 italic">No saved boards yet</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {savedBoards.map((savedBoard, index) => (
+                      <li key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                        <span>{savedBoard.name}</span>
+                        <div className="flex space-x-1">
+                          <button
+                            onClick={() => handleLoadBoard(index)}
+                            className="text-blue-600 hover:text-blue-800 p-1"
+                          >
+                            Load
+                          </button>
+                          <button
+                            onClick={() => handleDeleteBoard(index)}
+                            className="text-red-600 hover:text-red-800 p-1"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </main>
+
+          <footer className="bg-gray-800 text-white p-4 text-center">
+            <p>Tabletop Game Board Designer &copy; 2025</p>
+          </footer>
+
+          {/* Add the RandomBoardSettings component */}
+          {showRandomSettings && (
+            <RandomBoardSettings
+              settings={randomBoardSettings}
+              wallCount={wallPercentage}
+              onSettingChange={handleRandomSettingChange}
+              onWallCountChange={handleWallPercentageChange}
+              onClose={() => setShowRandomSettings(false)}
+              onGenerate={handleGenerateRandomBoard}
+              onTrueRandom={handleTrueRandomBoard}  // Add this prop
             />
-          </div>
-
-          <div className="w-full md:w-1/3 space-y-4">
-            <div className="bg-white rounded-lg shadow-md p-4">
-              <h2 className="text-lg font-semibold mb-3">Tools</h2>
-
-              <div className="mb-4">
-                <h3 className="text-md font-medium mb-2">Cell Types</h3>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    onClick={() => {
-                      setSelectedTool(CellType.Empty);
-                      setWallToolActive(false);
-                    }}
-                    className={`p-2 rounded ${selectedTool === CellType.Empty && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Erase
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedTool(CellType.Wall);
-                      setWallToolActive(false);
-                    }}
-                    className={`p-2 rounded ${selectedTool === CellType.Wall && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Wall
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedTool(CellType.Entrance);
-                      setWallToolActive(false);
-                    }}
-                    className={`p-2 rounded ${selectedTool === CellType.Entrance && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Entrance
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedTool(CellType.Key);
-                      setWallToolActive(false);
-                    }}
-                    className={`p-2 rounded ${selectedTool === CellType.Key && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Key
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedTool(CellType.Lock);
-                      setWallToolActive(false);
-                    }}
-                    className={`p-2 rounded ${selectedTool === CellType.Lock && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Lock
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedTool(CellType.Supplies);
-                      setWallToolActive(false);
-                    }}
-                    className={`p-2 rounded ${selectedTool === CellType.Supplies && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Supplies
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedTool(CellType.Mana);
-                      setWallToolActive(false);
-                    }}
-                    className={`p-2 rounded ${selectedTool === CellType.Mana && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Mana
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedTool(CellType.Encounter);
-                      setWallToolActive(false);
-                    }}
-                    className={`p-2 rounded ${selectedTool === CellType.Encounter && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Encounter
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedTool(CellType.Treasure);
-                      setWallToolActive(false);
-                    }}
-                    className={`p-2 rounded ${selectedTool === CellType.Treasure && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Treasure
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedTool(CellType.Relic);
-                      setWallToolActive(false);
-                    }}
-                    className={`p-2 rounded ${selectedTool === CellType.Relic && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Relic
-                  </button>
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <h3 className="text-md font-medium mb-2">Wall Placement</h3>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => {
-                      setWallToolActive(true);
-                      setSelectedWall('top');
-                    }}
-                    className={`p-2 rounded ${wallToolActive && selectedWall === 'top' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Top Wall
-                  </button>
-                  <button
-                    onClick={() => {
-                      setWallToolActive(true);
-                      setSelectedWall('right');
-                    }}
-                    className={`p-2 rounded ${wallToolActive && selectedWall === 'right' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Right Wall
-                  </button>
-                  <button
-                    onClick={() => {
-                      setWallToolActive(true);
-                      setSelectedWall('bottom');
-                    }}
-                    className={`p-2 rounded ${wallToolActive && selectedWall === 'bottom' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Bottom Wall
-                  </button>
-                  <button
-                    onClick={() => {
-                      setWallToolActive(true);
-                      setSelectedWall('left');
-                    }}
-                    className={`p-2 rounded ${wallToolActive && selectedWall === 'left' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    Left Wall
-                  </button>
-                </div>
-              </div>
-
-              <h3 className="text-lg font-semibold mt-4 mb-2">Color Requirements</h3>
-              <div className="grid grid-cols-3 gap-2 mb-2">
-                <button
-                  onClick={() => {
-                    setSelectedColor(ColorRequirement.None);
-                  }}
-                  className={`p-2 rounded ${selectedColor === ColorRequirement.None ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                >
-                  None
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedColor(ColorRequirement.Red);
-                  }}
-                  className={`p-2 rounded ${selectedColor === ColorRequirement.Red ? 'bg-blue-100 border-2 border-blue-500' : 'bg-red-100'}`}
-                >
-                  Red
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedColor(ColorRequirement.Orange);
-                  }}
-                  className={`p-2 rounded ${selectedColor === ColorRequirement.Orange ? 'bg-blue-100 border-2 border-blue-500' : 'bg-orange-100'}`}
-                >
-                  Orange
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedColor(ColorRequirement.Yellow);
-                  }}
-                  className={`p-2 rounded ${selectedColor === ColorRequirement.Yellow ? 'bg-blue-100 border-2 border-blue-500' : 'bg-yellow-100'}`}
-                >
-                  Yellow
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedColor(ColorRequirement.Green);
-                  }}
-                  className={`p-2 rounded ${selectedColor === ColorRequirement.Green ? 'bg-blue-100 border-2 border-blue-500' : 'bg-green-100'}`}
-                >
-                  Green
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedColor(ColorRequirement.Blue);
-                  }}
-                  className={`p-2 rounded ${selectedColor === ColorRequirement.Blue ? 'bg-blue-100 border-2 border-blue-500' : 'bg-blue-100'}`}
-                >
-                  Blue
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedColor(ColorRequirement.Purple);
-                  }}
-                  className={`p-2 rounded ${selectedColor === ColorRequirement.Purple ? 'bg-blue-100 border-2 border-blue-500' : 'bg-purple-100'}`}
-                >
-                  Purple
-                </button>
-              </div>
-            </div>
-
-            <CardDrawSimulator
-              board={board}
-              actionShapes={actionShapes}
-              onPlaceShape={handlePlaceShape}
-              onResetDeck={handleResetDeck} // Add this new prop
-            />
-
-            <div className="bg-white rounded-lg shadow-md p-4">
-              <h2 className="text-lg font-semibold mb-3">Action Shapes</h2>
-              <ActionShapes shapes={actionShapes} />
-            </div>
-
-
-
-            <div className="bg-white rounded-lg shadow-md p-4">
-              <h2 className="text-lg font-semibold mb-3">Saved Boards</h2>
-              {savedBoards.length === 0 ? (
-                <p className="text-gray-500 italic">No saved boards yet</p>
-              ) : (
-                <ul className="space-y-2">
-                  {savedBoards.map((savedBoard, index) => (
-                    <li key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                      <span>{savedBoard.name}</span>
-                      <div className="flex space-x-1">
-                        <button
-                          onClick={() => handleLoadBoard(index)}
-                          className="text-blue-600 hover:text-blue-800 p-1"
-                        >
-                          Load
-                        </button>
-                        <button
-                          onClick={() => handleDeleteBoard(index)}
-                          className="text-red-600 hover:text-red-800 p-1"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        </main>
-
-        <footer className="bg-gray-800 text-white p-4 text-center">
-          <p>Tabletop Game Board Designer &copy; 2025</p>
-        </footer>
-
-        {/* Add the RandomBoardSettings component */}
-        {showRandomSettings && (
-          <RandomBoardSettings
-            settings={randomBoardSettings}
-            wallCount={wallPercentage}
-            onSettingChange={handleRandomSettingChange}
-            onWallCountChange={handleWallPercentageChange}
-            onClose={() => setShowRandomSettings(false)}
-            onGenerate={handleGenerateRandomBoard}
-            onTrueRandom={handleTrueRandomBoard}  // Add this prop
-          />
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       <nav className="bg-gray-800 text-white p-4">
         <div className="container mx-auto flex justify-between items-center">
-          <Link to="/" className="px-3 py-1 rounded hover:bg-gray-700">Dungeon</Link>
-          <Link to="/tower" className="px-3 py-1 rounded hover:bg-gray-700">Tower</Link>
-          <Link to="/forest" className="px-3 py-1 rounded hover:bg-gray-700">Forest</Link>
-          <Link to="/city" className="px-3 py-1 rounded hover:bg-gray-700">City</Link>
+          <button onClick={() => setCurrentPage('dungeon')} className="px-3 py-1 rounded hover:bg-gray-700">Dungeon</button>
+          <button onClick={() => setCurrentPage('tower')} className="px-3 py-1 rounded hover:bg-gray-700">Tower</button>
+          <button onClick={() => setCurrentPage('forest')} className="px-3 py-1 rounded hover:bg-gray-700">Forest</button>
+          <button onClick={() => setCurrentPage('city')} className="px-3 py-1 rounded hover:bg-gray-700">City</button>
         </div>
       </nav>
 
-      <Switch>
-        <Route exact path="/" component={App} />
-        <Route path="/tower" component={TowerBoard} />
-        <Route path="/forest" component={ForestBoard} />
-        <Route path="/city" component={CityBoard} />
-      </Switch>
-    </Router>
+      {currentPage === 'tower' && <TowerBoard />}
+      {currentPage === 'forest' && <ForestBoard />}
+      {currentPage === 'city' && <CityBoard />}
+    </>
   );
 }
 
