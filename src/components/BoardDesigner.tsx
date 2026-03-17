@@ -6,9 +6,11 @@ interface BoardDesignerProps {
   onCellClick: (row: number, col: number) => void;
   placedShapes?: PlacedShape[];
   highlightedCells?: Set<string>;
+  goalDistances?: Map<string, number>;
+  showTooltips?: boolean;
 }
 
-const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, placedShapes = [], highlightedCells }) => {
+const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, placedShapes = [], highlightedCells, goalDistances, showTooltips = true }) => {
   const [hoveredCell, setHoveredCell] = useState<{ row: number, col: number } | null>(null);
 
   const getCellColor = (type: CellType, colorRequirement: ColorRequirement): string => {
@@ -97,6 +99,15 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
       case CellType.Goal:
         description = 'Goal - Primary objective / solve the maze';
         break;
+      case CellType.Energy:
+        description = 'Energy - Gain color energy when passing';
+        break;
+      case CellType.Trap:
+        description = 'Trap - Danger lurks here';
+        break;
+      case CellType.LostSoul:
+        description = 'Lost Soul - A wandering spirit in need';
+        break;
       default:
         description = '';
     }
@@ -134,6 +145,12 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
         return <span className="text-gray-700" style={outlineStyle}>🔒</span>;
       case CellType.Goal:
         return <span className="text-yellow-500" style={outlineStyle}>⭐</span>;
+      case CellType.Energy:
+        return <span className="font-black text-base leading-none" style={outlineStyle}>✚</span>;
+      case CellType.Trap:
+        return <span style={outlineStyle}>💣</span>;
+      case CellType.LostSoul:
+        return <span style={outlineStyle}>🕯️</span>;
       default:
         return '';
     }
@@ -215,9 +232,14 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
                 {cell.walls.left && <div className="absolute top-0 left-0 bottom-0 w-1 bg-gray-800"></div>}
 
                 {/* Tooltip */}
-                {hoveredCell && hoveredCell.row === rowIndex && hoveredCell.col === colIndex && (
+                {showTooltips && hoveredCell && hoveredCell.row === rowIndex && hoveredCell.col === colIndex && (
                   <div className="absolute z-10 bg-black bg-opacity-80 text-white text-xs rounded py-1 px-2 -mt-8 whitespace-nowrap">
                     {getCellDescription(cell.type, cell.colorRequirement)}
+                    {cell.type === CellType.Goal && goalDistances?.has(`${rowIndex},${colIndex}`) && (
+                      <div className="mt-1 text-emerald-300">
+                        📏 {goalDistances.get(`${rowIndex},${colIndex}`)} steps from entrance
+                      </div>
+                    )}
                     {hasWalls && (
                       <div className="mt-1">
                         {cell.walls.top && <span className="mr-1">↑</span>}
