@@ -421,15 +421,16 @@ function zoneStrength(zone: number): string {
 }
 
 function zoneXP(zone: number): number {
-    const bases = [5, 10, 20, 40, 80];
-    const base = bases[Math.min(zone, bases.length - 1)];
-    return base + Math.floor(Math.random() * Math.max(1, Math.floor(base * 0.3)));
+    // 1–2 XP per zone level (zone 0 → 1–2, zone 1 → 2–4, …)
+    const perZone = zone + 1;
+    return perZone + Math.floor(Math.random() * (perZone + 1));
 }
 
 function zoneGold(zone: number): number {
-    const bases = [3, 6, 12, 24, 50];
-    const base = bases[Math.min(zone, bases.length - 1)];
-    return base + Math.floor(Math.random() * Math.max(1, Math.floor(base * 0.3)));
+    // 2–3 Gold per zone level (zone 0 → 2–3, zone 1 → 4–6, …)
+    const min = (zone + 1) * 2;
+    const max = (zone + 1) * 3;
+    return min + Math.floor(Math.random() * (max - min + 1));
 }
 
 /**
