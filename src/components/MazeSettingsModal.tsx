@@ -10,6 +10,7 @@ interface MazeSettingsModalProps {
 const DEFAULT_MAZE_SETTINGS: MazeSettings = {
     goalCount: 1,
     goalPathLength: 20,
+    placementStrategy: 'random',
 };
 
 const MazeSettingsModal: React.FC<MazeSettingsModalProps> = ({ settings, onSave, onClose }) => {
@@ -36,7 +37,7 @@ const MazeSettingsModal: React.FC<MazeSettingsModalProps> = ({ settings, onSave,
                             min={1}
                             max={10}
                             value={local.goalCount}
-                            onChange={e => setLocal(prev => ({ ...prev, goalCount: Math.max(1, parseInt(e.target.value) || 1) }))}
+                            onChange={e => setLocal({ ...local, goalCount: Math.max(1, parseInt(e.target.value) || 1) })}
                             className="w-full border rounded px-3 py-2 text-sm"
                         />
                         <p className="text-xs text-gray-400 mt-1">How many ⭐ Goal cells to place (1–10)</p>
@@ -49,11 +50,38 @@ const MazeSettingsModal: React.FC<MazeSettingsModalProps> = ({ settings, onSave,
                             min={5}
                             max={200}
                             value={local.goalPathLength}
-                            onChange={e => setLocal(prev => ({ ...prev, goalPathLength: Math.max(5, parseInt(e.target.value) || 20) }))}
+                            onChange={e => setLocal({ ...local, goalPathLength: Math.max(5, parseInt(e.target.value) || 20) })}
                             className="w-full border rounded px-3 py-2 text-sm"
                         />
                         <p className="text-xs text-gray-400 mt-1">
                             Target number of steps from Entrance to each Goal along the maze path
+                        </p>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium mb-1">Populate Placement Strategy</label>
+                        <div className="flex gap-6 mt-1">
+                            <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="placementStrategy"
+                                    checked={local.placementStrategy !== 'depth-aware'}
+                                    onChange={() => setLocal({ ...local, placementStrategy: 'random' })}
+                                />
+                                Random
+                            </label>
+                            <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="placementStrategy"
+                                    checked={local.placementStrategy === 'depth-aware'}
+                                    onChange={() => setLocal({ ...local, placementStrategy: 'depth-aware' })}
+                                />
+                                Depth-Aware
+                            </label>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                            Depth-Aware places easier items (Keys, Supplies, Mana) near the entrance and harder items (Encounters, Treasure, Relics) deeper in the maze.
                         </p>
                     </div>
                 </div>

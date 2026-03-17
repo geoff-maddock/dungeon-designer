@@ -65,6 +65,7 @@ export interface CardDraw {
 export interface MazeSettings {
   goalCount: number;
   goalPathLength: number;
+  placementStrategy?: 'random' | 'depth-aware';
 }
 
 export interface BoardConfig {
