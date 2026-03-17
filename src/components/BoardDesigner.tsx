@@ -93,6 +93,9 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
       case CellType.Lock:
         description = 'Lock - Requires a key to pass through';
         break;
+      case CellType.Goal:
+        description = 'Goal - Primary objective / solve the maze';
+        break;
       default:
         description = '';
     }
@@ -128,6 +131,8 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
         return <span className="text-indigo-600" style={outlineStyle}>🏆</span>;
       case CellType.Lock:
         return <span className="text-gray-700" style={outlineStyle}>🔒</span>;
+      case CellType.Goal:
+        return <span className="text-yellow-500" style={outlineStyle}>⭐</span>;
       default:
         return '';
     }

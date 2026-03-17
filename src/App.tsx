@@ -1,17 +1,43 @@
-import React, { useState } from 'react';
-import { Download, Upload, Save, Trash2, RefreshCw, Grid, Camera, Settings } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Download, Upload, Save, Trash2, RefreshCw, Grid, Camera, Settings, ChevronDown, ChevronUp, Shuffle } from 'lucide-react';
 import BoardDesigner from './components/BoardDesigner';
 import ActionShapes from './components/ActionShapes';
 import CardDrawSimulator from './components/CardDrawSimulator';
-import { CellType, ColorRequirement, Board, ActionShape, PlacedShape, CardValue } from './types';
+import { CellType, ColorRequirement, Board, ActionShape, PlacedShape, CardValue, MazeSettings, BoardConfig } from './types';
 import { generateRandomBoard } from './utils/boardGenerator';
+import { generateMazeBoard, populateMaze } from './utils/mazeGenerator';
 import { placeShapeOnBoard } from './utils/gameLogic';
 import { exportBoardAsPNG } from './utils/imageExport';
 import RandomBoardSettings from './components/RandomBoardSettings';
+import MazeSettingsModal from './components/MazeSettingsModal';
+import BoardConfigManager from './components/BoardConfigManager';
 
 import TowerBoard from './components/TowerBoard';
 import ForestBoard from './components/ForestBoard';
 import CityBoard from './components/CityBoard';
+
+const DEFAULT_RANDOM_BOARD_SETTINGS: { [key in CellType | ColorRequirement]?: number } = {
+  [CellType.Key]: 3,
+  [CellType.Lock]: 3,
+  [CellType.Supplies]: 3,
+  [CellType.Mana]: 3,
+  [CellType.Encounter]: 4,
+  [CellType.Treasure]: 4,
+  [CellType.Relic]: 6,
+  [CellType.Goal]: 1,
+  [ColorRequirement.Red]: 2,
+  [ColorRequirement.Orange]: 2,
+  [ColorRequirement.Yellow]: 2,
+  [ColorRequirement.Green]: 2,
+  [ColorRequirement.Blue]: 2,
+  [ColorRequirement.Purple]: 2,
+};
+const DEFAULT_WALL_PERCENTAGE = 15;
+
+const DEFAULT_MAZE_SETTINGS: MazeSettings = {
+  goalCount: 1,
+  goalPathLength: 20,
+};
 
 function App() {
   const [currentPage, setCurrentPage] = useState<'dungeon' | 'tower' | 'forest' | 'city'>('dungeon');
@@ -66,24 +92,46 @@ function App() {
   const [savedBoards, setSavedBoards] = useState<{ name: string, board: Board }[]>([]);
   const [currentBoardName, setCurrentBoardName] = useState<string>('Untitled Board');
   const [showRandomSettings, setShowRandomSettings] = useState<boolean>(false);
+  const [showMazeSettings, setShowMazeSettings] = useState<boolean>(false);
+  const [mazeSettings, setMazeSettings] = useState<MazeSettings>(DEFAULT_MAZE_SETTINGS);
+  const [showGenerateDropdown, setShowGenerateDropdown] = useState<boolean>(false);
+  const [showMazeDropdown, setShowMazeDropdown] = useState<boolean>(false);
+  const generateDropdownRef = useRef<HTMLDivElement>(null);
+  const mazeDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (generateDropdownRef.current && !generateDropdownRef.current.contains(e.target as Node)) {
+        setShowGenerateDropdown(false);
+      }
+      if (mazeDropdownRef.current && !mazeDropdownRef.current.contains(e.target as Node)) {
+        setShowMazeDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    tools: true,
+    cardDraw: true,
+    actionShapes: false,
+    savedBoards: false,
+    boardConfigs: false,
+  });
+  const toggleSection = (key: string) =>
+    setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
   const [randomBoardSettings, setRandomBoardSettings] = useState<{
     [key in CellType | ColorRequirement]?: number;
-  }>({
-    [CellType.Key]: 3,
-    [CellType.Lock]: 3,
-    [CellType.Supplies]: 3,
-    [CellType.Mana]: 3,
-    [CellType.Encounter]: 4,
-    [CellType.Treasure]: 4,
-    [CellType.Relic]: 6,
-    [ColorRequirement.Red]: 2,
-    [ColorRequirement.Orange]: 2,
-    [ColorRequirement.Yellow]: 2,
-    [ColorRequirement.Green]: 2,
-    [ColorRequirement.Blue]: 2,
-    [ColorRequirement.Purple]: 2,
+  }>(DEFAULT_RANDOM_BOARD_SETTINGS);
+  const [wallPercentage, setWallPercentage] = useState<number>(DEFAULT_WALL_PERCENTAGE);
+
+  const [boardConfigs, setBoardConfigs] = useState<BoardConfig[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('dungeonBoardConfigs') || '[]');
+    } catch {
+      return [];
+    }
   });
-  const [wallPercentage, setWallPercentage] = useState<number>(15);
+  const [configName, setConfigName] = useState<string>('My Config');
 
   const handleCellClick = (row: number, col: number) => {
     const newBoard = [...board];
@@ -279,16 +327,13 @@ function App() {
     }
   };
 
-  // Add these helper functions
-  const handleRandomSettingChange = (type: CellType | ColorRequirement, value: number) => {
-    setRandomBoardSettings(prev => ({
-      ...prev,
-      [type]: value
-    }));
-  };
-
-  const handleWallPercentageChange = (value: number) => {
-    setWallPercentage(Math.max(0, Math.min(100, value)));
+  const handleSaveSettings = (
+    newSettings: { [key in CellType | ColorRequirement]?: number },
+    newWallPercentage: number
+  ) => {
+    setRandomBoardSettings(newSettings);
+    setWallPercentage(Math.max(0, Math.min(100, newWallPercentage)));
+    setShowRandomSettings(false);
   };
 
   // Add this function in App.tsx
@@ -323,413 +368,646 @@ function App() {
     }, 2000);
   };
 
-  // Add a new function for true random generation
   const handleTrueRandomBoard = () => {
-    // Generate board without using the settings
     const newBoard = generateRandomBoard(boardSize);
     setBoard(newBoard);
-    setShowRandomSettings(false);
-
-    // Show confirmation message
-    const toast = document.createElement('div');
-    toast.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50';
-    toast.textContent = 'True random board has been generated';
-    document.body.appendChild(toast);
-
-    // Remove message after 2 seconds
-    setTimeout(() => {
-      document.body.removeChild(toast);
-    }, 2000);
+    setPlacedShapes([]);
   };
 
-  return (
-    <>
-      {currentPage === 'dungeon' && (
-        <div className="min-h-screen bg-gray-100 flex flex-col">
-          <header className="bg-indigo-700 text-white p-4 shadow-md">
-            <div className="container mx-auto flex justify-between items-center">
-              <h1 className="text-2xl font-bold">Tabletop Game Board Designer</h1>
-              <div className="flex items-center space-x-4">
-                <input
-                  type="text"
-                  value={currentBoardName}
-                  onChange={(e) => setCurrentBoardName(e.target.value)}
-                  className="px-3 py-1 rounded text-black"
-                  placeholder="Board Name"
-                />
-                <button
-                  onClick={handleSaveBoard}
-                  className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded flex items-center"
-                >
-                  <Save size={18} className="mr-1" /> Save
-                </button>
-                <button
-                  onClick={handleExportBoard}
-                  className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded flex items-center"
-                >
-                  <Download size={18} className="mr-1" /> Export
-                </button>
-                <label className="bg-orange-600 hover:bg-orange-700 px-3 py-1 rounded flex items-center cursor-pointer">
-                  <Upload size={18} className="mr-1" /> Import
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={handleImportBoard}
-                    className="hidden"
-                  />
-                </label>
-                {/* Add the new Save as PNG button */}
-                <button
-                  onClick={handleSaveAsImage}
-                  className="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded flex items-center"
-                >
-                  <Camera size={18} className="mr-1" /> Save as PNG
-                </button>
-                {/* Add the new Settings button */}
-                <button
-                  onClick={() => setShowRandomSettings(true)}
-                  className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded flex items-center"
-                >
-                  <Settings size={18} className="mr-1" /> Settings
-                </button>
-              </div>
-            </div>
-          </header>
+  const handleGenerateMaze = () => {
+    const newBoard = generateMazeBoard(boardSize, mazeSettings);
+    setBoard(newBoard);
+    setPlacedShapes([]);
+  };
 
-          <main className="container mx-auto p-4 flex-grow flex flex-col md:flex-row gap-4">
-            <div className="w-full md:w-2/3 bg-white rounded-lg shadow-md p-4">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">Dungeon Board Designer</h2>
-                {/* Replace the Generate Random button with this */}
-                <div className="flex items-center space-x-2">
+  const handleSaveConfig = (name: string) => {
+    const newConfig: BoardConfig = {
+      id: Date.now().toString(),
+      name,
+      boardSize,
+      cellTypeCounts: Object.fromEntries(
+        Object.entries(randomBoardSettings).filter(([key]) =>
+          Object.values(CellType).includes(key as CellType)
+        )
+      ) as { [key in CellType]?: number },
+      colorRequirementCounts: Object.fromEntries(
+        Object.entries(randomBoardSettings).filter(([key]) =>
+          Object.values(ColorRequirement).includes(key as ColorRequirement)
+        )
+      ) as { [key in ColorRequirement]?: number },
+      wallPercentage,
+      mazeSettings,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...boardConfigs, newConfig];
+    setBoardConfigs(updated);
+    localStorage.setItem('dungeonBoardConfigs', JSON.stringify(updated));
+    setConfigName(name);
+  };
+
+  const handleLoadConfig = (config: BoardConfig) => {
+    setBoardSize(config.boardSize);
+    const merged: { [key in CellType | ColorRequirement]?: number } = {
+      ...config.cellTypeCounts,
+      ...config.colorRequirementCounts,
+    };
+    setRandomBoardSettings(merged);
+    setWallPercentage(config.wallPercentage);
+    setMazeSettings(config.mazeSettings);
+    setConfigName(config.name);
+  };
+
+  const handleDeleteConfig = (id: string) => {
+    const updated = boardConfigs.filter(c => c.id !== id);
+    setBoardConfigs(updated);
+    localStorage.setItem('dungeonBoardConfigs', JSON.stringify(updated));
+  };
+
+  const handleExportConfigs = () => {
+    const data = JSON.stringify(boardConfigs, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'board-configs.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportConfigs = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target?.result as string) as BoardConfig[];
+        if (!Array.isArray(data)) throw new Error('Invalid format');
+        const merged = [
+          ...boardConfigs,
+          ...data.filter(d => !boardConfigs.some(c => c.id === d.id)),
+        ];
+        setBoardConfigs(merged);
+        localStorage.setItem('dungeonBoardConfigs', JSON.stringify(merged));
+      } catch {
+        alert('Error importing configs: invalid file format');
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  };
+
+  const handlePopulateMaze = () => {
+    const cellTypeCounts = Object.fromEntries(
+      Object.entries(randomBoardSettings).filter(([key]) =>
+        Object.values(CellType).includes(key as CellType)
+      )
+    ) as Partial<Record<CellType, number>>;
+    const colorRequirementCounts = Object.fromEntries(
+      Object.entries(randomBoardSettings).filter(([key]) =>
+        Object.values(ColorRequirement).includes(key as ColorRequirement)
+      )
+    ) as Partial<Record<ColorRequirement, number>>;
+    const newBoard = populateMaze(board, cellTypeCounts, colorRequirementCounts);
+    setBoard(newBoard);
+    setPlacedShapes([]);
+  };
+
+  const navItems: { page: 'dungeon' | 'tower' | 'forest' | 'city'; label: string; icon: string }[] = [
+    { page: 'dungeon', label: 'Dungeon', icon: '🏰' },
+    { page: 'tower', label: 'Tower', icon: '🗼' },
+    { page: 'forest', label: 'Forest', icon: '🌲' },
+    { page: 'city', label: 'City', icon: '🏙' },
+  ];
+
+  return (
+    <div className="flex h-screen bg-gray-100 overflow-hidden">
+      {/* Left Sidebar Navigation */}
+      <aside className="w-48 bg-gray-900 text-white flex flex-col flex-shrink-0">
+        <div className="p-4 border-b border-gray-700">
+          <h1 className="text-base font-bold leading-tight text-indigo-300">Dungeon<br />Designer</h1>
+        </div>
+        <nav className="flex flex-col flex-1 p-2 space-y-1 mt-2">
+          {navItems.map(({ page, label, icon }) => (
+            <button
+              key={page}
+              onClick={() => setCurrentPage(page)}
+              className={`flex items-center gap-3 px-3 py-2 rounded text-left w-full transition-colors ${currentPage === page
+                ? 'bg-indigo-600 text-white'
+                : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                }`}
+            >
+              <span className="text-lg">{icon}</span>
+              <span className="font-medium">{label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="p-4 border-t border-gray-700 text-xs text-gray-500 text-center">
+          &copy; 2025
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+
+        {currentPage === 'dungeon' && (
+          <div className="flex flex-col flex-1 overflow-hidden">
+            <header className="bg-indigo-700 text-white p-4 shadow-md flex-shrink-0">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold">Dungeon Board Designer</h2>
+                <div className="flex items-center space-x-4">
+                  <input
+                    type="text"
+                    value={currentBoardName}
+                    onChange={(e) => setCurrentBoardName(e.target.value)}
+                    className="px-3 py-1 rounded text-black"
+                    placeholder="Board Name"
+                  />
                   <button
-                    onClick={handleResetBoard}
-                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded flex items-center"
+                    onClick={handleSaveBoard}
+                    className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded flex items-center"
                   >
-                    <RefreshCw size={18} className="mr-1" /> Reset Board
+                    <Save size={18} className="mr-1" /> Save
+                  </button>
+                  <button
+                    onClick={handleExportBoard}
+                    className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded flex items-center"
+                  >
+                    <Download size={18} className="mr-1" /> Export
+                  </button>
+                  <label className="bg-orange-600 hover:bg-orange-700 px-3 py-1 rounded flex items-center cursor-pointer">
+                    <Upload size={18} className="mr-1" /> Import
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleImportBoard}
+                      className="hidden"
+                    />
+                  </label>
+                  <button
+                    onClick={handleSaveAsImage}
+                    className="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded flex items-center"
+                  >
+                    <Camera size={18} className="mr-1" /> Save as PNG
                   </button>
                   <button
                     onClick={() => setShowRandomSettings(true)}
-                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded flex items-center"
+                    className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded flex items-center"
                   >
-                    <Settings size={18} className="mr-1" /> Board Settings
+                    <Settings size={18} className="mr-1" /> Settings
                   </button>
                   <button
-                    onClick={handleGenerateRandomBoard}
-                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded flex items-center"
+                    onClick={() => setShowMazeSettings(true)}
+                    className="bg-teal-600 hover:bg-teal-700 px-3 py-1 rounded flex items-center"
                   >
-                    <Grid size={18} className="mr-1" /> Generate Board
-                  </button>
-
-                  <div className="flex items-center ml-2">
-                    <button
-                      onClick={() => handleResizeBoard(boardSize - 1)}
-                      className="bg-gray-300 hover:bg-gray-400 px-2 py-1 rounded-l"
-                      disabled={boardSize <= 8}
-                    >
-                      -
-                    </button>
-                    <div className="bg-gray-200 px-3 py-1 flex items-center">
-                      <Grid size={16} className="mr-1" /> {boardSize}x{boardSize}
-                    </div>
-                    <button
-                      onClick={() => handleResizeBoard(boardSize + 1)}
-                      className="bg-gray-300 hover:bg-gray-400 px-2 py-1 rounded-r"
-                      disabled={boardSize >= 24}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <BoardDesigner
-                board={board}
-                onCellClick={handleCellClick}
-                placedShapes={placedShapes}
-              />
-            </div>
-
-            <div className="w-full md:w-1/3 space-y-4">
-              <div className="bg-white rounded-lg shadow-md p-4">
-                <h2 className="text-lg font-semibold mb-3">Tools</h2>
-
-                <div className="mb-4">
-                  <h3 className="text-md font-medium mb-2">Cell Types</h3>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      onClick={() => {
-                        setSelectedTool(CellType.Empty);
-                        setWallToolActive(false);
-                      }}
-                      className={`p-2 rounded ${selectedTool === CellType.Empty && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Erase
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedTool(CellType.Wall);
-                        setWallToolActive(false);
-                      }}
-                      className={`p-2 rounded ${selectedTool === CellType.Wall && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Wall
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedTool(CellType.Entrance);
-                        setWallToolActive(false);
-                      }}
-                      className={`p-2 rounded ${selectedTool === CellType.Entrance && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Entrance
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedTool(CellType.Key);
-                        setWallToolActive(false);
-                      }}
-                      className={`p-2 rounded ${selectedTool === CellType.Key && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Key
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedTool(CellType.Lock);
-                        setWallToolActive(false);
-                      }}
-                      className={`p-2 rounded ${selectedTool === CellType.Lock && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Lock
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedTool(CellType.Supplies);
-                        setWallToolActive(false);
-                      }}
-                      className={`p-2 rounded ${selectedTool === CellType.Supplies && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Supplies
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedTool(CellType.Mana);
-                        setWallToolActive(false);
-                      }}
-                      className={`p-2 rounded ${selectedTool === CellType.Mana && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Mana
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedTool(CellType.Encounter);
-                        setWallToolActive(false);
-                      }}
-                      className={`p-2 rounded ${selectedTool === CellType.Encounter && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Encounter
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedTool(CellType.Treasure);
-                        setWallToolActive(false);
-                      }}
-                      className={`p-2 rounded ${selectedTool === CellType.Treasure && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Treasure
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedTool(CellType.Relic);
-                        setWallToolActive(false);
-                      }}
-                      className={`p-2 rounded ${selectedTool === CellType.Relic && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Relic
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mb-4">
-                  <h3 className="text-md font-medium mb-2">Wall Placement</h3>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => {
-                        setWallToolActive(true);
-                        setSelectedWall('top');
-                      }}
-                      className={`p-2 rounded ${wallToolActive && selectedWall === 'top' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Top Wall
-                    </button>
-                    <button
-                      onClick={() => {
-                        setWallToolActive(true);
-                        setSelectedWall('right');
-                      }}
-                      className={`p-2 rounded ${wallToolActive && selectedWall === 'right' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Right Wall
-                    </button>
-                    <button
-                      onClick={() => {
-                        setWallToolActive(true);
-                        setSelectedWall('bottom');
-                      }}
-                      className={`p-2 rounded ${wallToolActive && selectedWall === 'bottom' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Bottom Wall
-                    </button>
-                    <button
-                      onClick={() => {
-                        setWallToolActive(true);
-                        setSelectedWall('left');
-                      }}
-                      className={`p-2 rounded ${wallToolActive && selectedWall === 'left' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                    >
-                      Left Wall
-                    </button>
-                  </div>
-                </div>
-
-                <h3 className="text-lg font-semibold mt-4 mb-2">Color Requirements</h3>
-                <div className="grid grid-cols-3 gap-2 mb-2">
-                  <button
-                    onClick={() => {
-                      setSelectedColor(ColorRequirement.None);
-                    }}
-                    className={`p-2 rounded ${selectedColor === ColorRequirement.None ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
-                  >
-                    None
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedColor(ColorRequirement.Red);
-                    }}
-                    className={`p-2 rounded ${selectedColor === ColorRequirement.Red ? 'bg-blue-100 border-2 border-blue-500' : 'bg-red-100'}`}
-                  >
-                    Red
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedColor(ColorRequirement.Orange);
-                    }}
-                    className={`p-2 rounded ${selectedColor === ColorRequirement.Orange ? 'bg-blue-100 border-2 border-blue-500' : 'bg-orange-100'}`}
-                  >
-                    Orange
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedColor(ColorRequirement.Yellow);
-                    }}
-                    className={`p-2 rounded ${selectedColor === ColorRequirement.Yellow ? 'bg-blue-100 border-2 border-blue-500' : 'bg-yellow-100'}`}
-                  >
-                    Yellow
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedColor(ColorRequirement.Green);
-                    }}
-                    className={`p-2 rounded ${selectedColor === ColorRequirement.Green ? 'bg-blue-100 border-2 border-blue-500' : 'bg-green-100'}`}
-                  >
-                    Green
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedColor(ColorRequirement.Blue);
-                    }}
-                    className={`p-2 rounded ${selectedColor === ColorRequirement.Blue ? 'bg-blue-100 border-2 border-blue-500' : 'bg-blue-100'}`}
-                  >
-                    Blue
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedColor(ColorRequirement.Purple);
-                    }}
-                    className={`p-2 rounded ${selectedColor === ColorRequirement.Purple ? 'bg-blue-100 border-2 border-blue-500' : 'bg-purple-100'}`}
-                  >
-                    Purple
+                    <Settings size={18} className="mr-1" /> Maze Settings
                   </button>
                 </div>
               </div>
+            </header>
 
-              <CardDrawSimulator
-                board={board}
-                actionShapes={actionShapes}
-                onPlaceShape={handlePlaceShape}
-                onResetDeck={handleResetDeck} // Add this new prop
-              />
-
-              <div className="bg-white rounded-lg shadow-md p-4">
-                <h2 className="text-lg font-semibold mb-3">Action Shapes</h2>
-                <ActionShapes shapes={actionShapes} />
-              </div>
-
-
-
-              <div className="bg-white rounded-lg shadow-md p-4">
-                <h2 className="text-lg font-semibold mb-3">Saved Boards</h2>
-                {savedBoards.length === 0 ? (
-                  <p className="text-gray-500 italic">No saved boards yet</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {savedBoards.map((savedBoard, index) => (
-                      <li key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                        <span>{savedBoard.name}</span>
-                        <div className="flex space-x-1">
+            <main className="p-4 flex-1 overflow-auto flex flex-col md:flex-row gap-4">
+              <div className="w-full md:w-2/3 bg-white rounded-lg shadow-md p-4">
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={handleResetBoard}
+                      className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded flex items-center"
+                    >
+                      <RefreshCw size={18} className="mr-1" /> Reset Board
+                    </button>
+                    <div className="relative" ref={generateDropdownRef}>
+                      <div className="flex items-center">
+                        <button
+                          onClick={handleGenerateRandomBoard}
+                          className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-l flex items-center"
+                        >
+                          <Grid size={18} className="mr-1" /> Generate Board
+                        </button>
+                        <button
+                          onClick={() => setShowGenerateDropdown(prev => !prev)}
+                          className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded-r border-l border-green-500 flex items-center"
+                          aria-label="More generate options"
+                        >
+                          <ChevronDown size={16} />
+                        </button>
+                      </div>
+                      {showGenerateDropdown && (
+                        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-lg z-10 min-w-full">
                           <button
-                            onClick={() => handleLoadBoard(index)}
-                            className="text-blue-600 hover:text-blue-800 p-1"
+                            onClick={() => { handleTrueRandomBoard(); setShowGenerateDropdown(false); }}
+                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap"
                           >
-                            Load
-                          </button>
-                          <button
-                            onClick={() => handleDeleteBoard(index)}
-                            className="text-red-600 hover:text-red-800 p-1"
-                          >
-                            <Trash2 size={16} />
+                            <Shuffle size={15} /> True Random
                           </button>
                         </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                      )}
+                    </div>
+
+                    <div className="relative" ref={mazeDropdownRef}>
+                      <div className="flex items-center">
+                        <button
+                          onClick={handleGenerateMaze}
+                          className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1 rounded-l flex items-center"
+                        >
+                          <Grid size={18} className="mr-1" /> Generate Maze
+                        </button>
+                        <button
+                          onClick={() => setShowMazeDropdown(prev => !prev)}
+                          className="bg-teal-600 hover:bg-teal-700 text-white px-2 py-1 rounded-r border-l border-teal-500 flex items-center"
+                          aria-label="More maze options"
+                        >
+                          <ChevronDown size={16} />
+                        </button>
+                      </div>
+                      {showMazeDropdown && (
+                        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-lg z-10 min-w-full">
+                          <button
+                            onClick={() => { handlePopulateMaze(); setShowMazeDropdown(false); }}
+                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap"
+                          >
+                            <Shuffle size={15} /> Populate Maze
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center ml-2">
+                      <button
+                        onClick={() => handleResizeBoard(boardSize - 1)}
+                        className="bg-gray-300 hover:bg-gray-400 px-2 py-1 rounded-l"
+                        disabled={boardSize <= 8}
+                      >
+                        -
+                      </button>
+                      <div className="bg-gray-200 px-3 py-1 flex items-center">
+                        <Grid size={16} className="mr-1" /> {boardSize}x{boardSize}
+                      </div>
+                      <button
+                        onClick={() => handleResizeBoard(boardSize + 1)}
+                        className="bg-gray-300 hover:bg-gray-400 px-2 py-1 rounded-r"
+                        disabled={boardSize >= 24}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <BoardDesigner
+                  board={board}
+                  onCellClick={handleCellClick}
+                  placedShapes={placedShapes}
+                />
               </div>
-            </div>
-          </main>
 
-          <footer className="bg-gray-800 text-white p-4 text-center">
-            <p>Tabletop Game Board Designer &copy; 2025</p>
-          </footer>
+              <div className="w-full md:w-1/3 space-y-4">
+                <div className="bg-white rounded-lg shadow-md">
+                  <button
+                    onClick={() => toggleSection('tools')}
+                    className="w-full flex justify-between items-center p-4 text-left hover:bg-gray-50 rounded-lg"
+                  >
+                    <h2 className="text-lg font-semibold">Tools</h2>
+                    {expandedSections.tools ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </button>
+                  {expandedSections.tools && (
+                    <div className="px-4 pb-4">
+                      <div className="mb-4">
+                        <h3 className="text-md font-medium mb-2">Cell Types</h3>
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.Empty);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.Empty && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Erase
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.Wall);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.Wall && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Wall
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.Entrance);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.Entrance && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Entrance
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.Key);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.Key && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Key
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.Lock);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.Lock && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Lock
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.Supplies);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.Supplies && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Supplies
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.Mana);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.Mana && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Mana
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.Encounter);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.Encounter && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Encounter
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.Treasure);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.Treasure && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Treasure
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.Relic);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.Relic && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Relic
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.Goal);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.Goal && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            ⭐ Goal
+                          </button>
+                        </div>
+                      </div>
 
-          {/* Add the RandomBoardSettings component */}
-          {showRandomSettings && (
-            <RandomBoardSettings
-              settings={randomBoardSettings}
-              wallCount={wallPercentage}
-              onSettingChange={handleRandomSettingChange}
-              onWallCountChange={handleWallPercentageChange}
-              onClose={() => setShowRandomSettings(false)}
-              onGenerate={handleGenerateRandomBoard}
-              onTrueRandom={handleTrueRandomBoard}  // Add this prop
-            />
-          )}
-        </div>
-      )}
+                      <div className="mb-4">
+                        <h3 className="text-md font-medium mb-2">Wall Placement</h3>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => {
+                              setWallToolActive(true);
+                              setSelectedWall('top');
+                            }}
+                            className={`p-2 rounded ${wallToolActive && selectedWall === 'top' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Top Wall
+                          </button>
+                          <button
+                            onClick={() => {
+                              setWallToolActive(true);
+                              setSelectedWall('right');
+                            }}
+                            className={`p-2 rounded ${wallToolActive && selectedWall === 'right' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Right Wall
+                          </button>
+                          <button
+                            onClick={() => {
+                              setWallToolActive(true);
+                              setSelectedWall('bottom');
+                            }}
+                            className={`p-2 rounded ${wallToolActive && selectedWall === 'bottom' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Bottom Wall
+                          </button>
+                          <button
+                            onClick={() => {
+                              setWallToolActive(true);
+                              setSelectedWall('left');
+                            }}
+                            className={`p-2 rounded ${wallToolActive && selectedWall === 'left' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            Left Wall
+                          </button>
+                        </div>
+                      </div>
 
-      <nav className="bg-gray-800 text-white p-4">
-        <div className="container mx-auto flex justify-between items-center">
-          <button onClick={() => setCurrentPage('dungeon')} className="px-3 py-1 rounded hover:bg-gray-700">Dungeon</button>
-          <button onClick={() => setCurrentPage('tower')} className="px-3 py-1 rounded hover:bg-gray-700">Tower</button>
-          <button onClick={() => setCurrentPage('forest')} className="px-3 py-1 rounded hover:bg-gray-700">Forest</button>
-          <button onClick={() => setCurrentPage('city')} className="px-3 py-1 rounded hover:bg-gray-700">City</button>
-        </div>
-      </nav>
+                      <h3 className="text-lg font-semibold mt-4 mb-2">Color Requirements</h3>
+                      <div className="grid grid-cols-3 gap-2 mb-2">
+                        <button
+                          onClick={() => {
+                            setSelectedColor(ColorRequirement.None);
+                          }}
+                          className={`p-2 rounded ${selectedColor === ColorRequirement.None ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                        >
+                          None
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedColor(ColorRequirement.Red);
+                          }}
+                          className={`p-2 rounded ${selectedColor === ColorRequirement.Red ? 'bg-blue-100 border-2 border-blue-500' : 'bg-red-100'}`}
+                        >
+                          Red
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedColor(ColorRequirement.Orange);
+                          }}
+                          className={`p-2 rounded ${selectedColor === ColorRequirement.Orange ? 'bg-blue-100 border-2 border-blue-500' : 'bg-orange-100'}`}
+                        >
+                          Orange
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedColor(ColorRequirement.Yellow);
+                          }}
+                          className={`p-2 rounded ${selectedColor === ColorRequirement.Yellow ? 'bg-blue-100 border-2 border-blue-500' : 'bg-yellow-100'}`}
+                        >
+                          Yellow
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedColor(ColorRequirement.Green);
+                          }}
+                          className={`p-2 rounded ${selectedColor === ColorRequirement.Green ? 'bg-blue-100 border-2 border-blue-500' : 'bg-green-100'}`}
+                        >
+                          Green
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedColor(ColorRequirement.Blue);
+                          }}
+                          className={`p-2 rounded ${selectedColor === ColorRequirement.Blue ? 'bg-blue-100 border-2 border-blue-500' : 'bg-blue-100'}`}
+                        >
+                          Blue
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedColor(ColorRequirement.Purple);
+                          }}
+                          className={`p-2 rounded ${selectedColor === ColorRequirement.Purple ? 'bg-blue-100 border-2 border-blue-500' : 'bg-purple-100'}`}
+                        >
+                          Purple
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
-      {currentPage === 'tower' && <TowerBoard />}
-      {currentPage === 'forest' && <ForestBoard />}
-      {currentPage === 'city' && <CityBoard />}
-    </>
+                <div className="bg-white rounded-lg shadow-md">
+                  <button
+                    onClick={() => toggleSection('cardDraw')}
+                    className="w-full flex justify-between items-center p-4 text-left hover:bg-gray-50 rounded-lg"
+                  >
+                    <h2 className="text-lg font-semibold">Card Draw Simulator</h2>
+                    {expandedSections.cardDraw ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </button>
+                  {expandedSections.cardDraw && (
+                    <div className="px-4 pb-4">
+                      <CardDrawSimulator
+                        board={board}
+                        actionShapes={actionShapes}
+                        onPlaceShape={handlePlaceShape}
+                        onResetDeck={handleResetDeck}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-lg shadow-md">
+                  <button
+                    onClick={() => toggleSection('actionShapes')}
+                    className="w-full flex justify-between items-center p-4 text-left hover:bg-gray-50 rounded-lg"
+                  >
+                    <h2 className="text-lg font-semibold">Action Shapes</h2>
+                    {expandedSections.actionShapes ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </button>
+                  {expandedSections.actionShapes && (
+                    <div className="px-4 pb-4">
+                      <ActionShapes shapes={actionShapes} />
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-lg shadow-md">
+                  <button
+                    onClick={() => toggleSection('savedBoards')}
+                    className="w-full flex justify-between items-center p-4 text-left hover:bg-gray-50 rounded-lg"
+                  >
+                    <h2 className="text-lg font-semibold">Saved Boards</h2>
+                    {expandedSections.savedBoards ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </button>
+                  {expandedSections.savedBoards && (
+                    <div className="px-4 pb-4">
+                      {savedBoards.length === 0 ? (
+                        <p className="text-gray-500 italic">No saved boards yet</p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {savedBoards.map((savedBoard, index) => (
+                            <li key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                              <span>{savedBoard.name}</span>
+                              <div className="flex space-x-1">
+                                <button
+                                  onClick={() => handleLoadBoard(index)}
+                                  className="text-blue-600 hover:text-blue-800 p-1"
+                                >
+                                  Load
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteBoard(index)}
+                                  className="text-red-600 hover:text-red-800 p-1"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-lg shadow-md">
+                  <button
+                    onClick={() => toggleSection('boardConfigs')}
+                    className="w-full flex justify-between items-center p-4 text-left hover:bg-gray-50 rounded-lg"
+                  >
+                    <h2 className="text-lg font-semibold">Board Configs</h2>
+                    {expandedSections.boardConfigs ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </button>
+                  {expandedSections.boardConfigs && (
+                    <div className="px-4 pb-4">
+                      <BoardConfigManager
+                        configs={boardConfigs}
+                        currentConfigName={configName}
+                        onSaveConfig={handleSaveConfig}
+                        onLoadConfig={handleLoadConfig}
+                        onDeleteConfig={handleDeleteConfig}
+                        onExportConfigs={handleExportConfigs}
+                        onImportConfigs={handleImportConfigs}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </main>
+
+            {showMazeSettings && (
+              <MazeSettingsModal
+                settings={mazeSettings}
+                onSave={(s) => { setMazeSettings(s); setShowMazeSettings(false); }}
+                onClose={() => setShowMazeSettings(false)}
+              />
+            )}
+
+            {showRandomSettings && (
+              <RandomBoardSettings
+                settings={randomBoardSettings}
+                wallCount={wallPercentage}
+                defaultSettings={DEFAULT_RANDOM_BOARD_SETTINGS}
+                defaultWallCount={DEFAULT_WALL_PERCENTAGE}
+                onSave={handleSaveSettings}
+                onClose={() => setShowRandomSettings(false)}
+              />
+            )}
+          </div>
+        )}
+
+        {currentPage === 'tower' && <div className="flex-1 overflow-auto"><TowerBoard /></div>}
+        {currentPage === 'forest' && <div className="flex-1 overflow-auto"><ForestBoard /></div>}
+        {currentPage === 'city' && <div className="flex-1 overflow-auto"><CityBoard /></div>}
+
+      </div>
+    </div>
   );
 }
 

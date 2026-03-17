@@ -1,28 +1,37 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CellType, ColorRequirement } from '../types';
-import { Shuffle } from 'lucide-react';
 
 interface RandomBoardSettingsProps {
     settings: {
         [key in CellType | ColorRequirement]?: number;
     };
     wallCount: number;
-    onSettingChange: (type: CellType | ColorRequirement, value: number) => void;
-    onWallCountChange: (count: number) => void;
+    defaultSettings: { [key in CellType | ColorRequirement]?: number };
+    defaultWallCount: number;
+    onSave: (settings: { [key in CellType | ColorRequirement]?: number }, wallCount: number) => void;
     onClose: () => void;
-    onGenerate: () => void;
-    onTrueRandom: () => void;  // New prop for true random generation
 }
 
 const RandomBoardSettings: React.FC<RandomBoardSettingsProps> = ({
     settings,
     wallCount,
-    onSettingChange,
-    onWallCountChange,
+    defaultSettings,
+    defaultWallCount,
+    onSave,
     onClose,
-    onGenerate,
-    onTrueRandom  // Add this prop
 }) => {
+    const [localSettings, setLocalSettings] = useState({ ...settings });
+    const [localWallCount, setLocalWallCount] = useState(wallCount);
+
+    const handleSettingChange = (type: CellType | ColorRequirement, value: number) => {
+        setLocalSettings(prev => ({ ...prev, [type]: value }));
+    };
+
+    const handleResetToDefaults = () => {
+        setLocalSettings({ ...defaultSettings });
+        setLocalWallCount(defaultWallCount);
+    };
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -43,16 +52,14 @@ const RandomBoardSettings: React.FC<RandomBoardSettingsProps> = ({
                             {Object.values(CellType).filter(type => type !== CellType.Empty && type !== CellType.Wall).map(cellType => (
                                 <div key={cellType} className="space-y-1">
                                     <label className="text-sm font-medium">{cellType.charAt(0).toUpperCase() + cellType.slice(1)}</label>
-                                    <div className="flex items-center">
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            max="50"
-                                            value={settings[cellType] || 0}
-                                            onChange={(e) => onSettingChange(cellType, parseInt(e.target.value) || 0)}
-                                            className="w-full border rounded px-2 py-1 text-sm"
-                                        />
-                                    </div>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="50"
+                                        value={localSettings[cellType] ?? 0}
+                                        onChange={(e) => handleSettingChange(cellType, parseInt(e.target.value) || 0)}
+                                        className="w-full border rounded px-2 py-1 text-sm"
+                                    />
                                 </div>
                             ))}
                         </div>
@@ -66,8 +73,8 @@ const RandomBoardSettings: React.FC<RandomBoardSettingsProps> = ({
                                 type="number"
                                 min="0"
                                 max="100"
-                                value={wallCount}
-                                onChange={(e) => onWallCountChange(parseInt(e.target.value) || 0)}
+                                value={localWallCount}
+                                onChange={(e) => setLocalWallCount(parseInt(e.target.value) || 0)}
                                 className="w-full border rounded px-2 py-1 text-sm"
                             />
                             <p className="text-xs text-gray-500">Percentage of the board (0-100)</p>
@@ -80,41 +87,41 @@ const RandomBoardSettings: React.FC<RandomBoardSettingsProps> = ({
                             {Object.values(ColorRequirement).filter(color => color !== ColorRequirement.None).map(color => (
                                 <div key={color} className="space-y-1">
                                     <label className="text-sm font-medium">{color.charAt(0).toUpperCase() + color.slice(1)}</label>
-                                    <div className="flex items-center">
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            max="50"
-                                            value={settings[color] || 0}
-                                            onChange={(e) => onSettingChange(color, parseInt(e.target.value) || 0)}
-                                            className="w-full border rounded px-2 py-1 text-sm"
-                                        />
-                                    </div>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="50"
+                                        value={localSettings[color] ?? 0}
+                                        onChange={(e) => handleSettingChange(color, parseInt(e.target.value) || 0)}
+                                        className="w-full border rounded px-2 py-1 text-sm"
+                                    />
                                 </div>
                             ))}
                         </div>
                     </div>
                 </div>
 
-                <div className="mt-6 flex justify-end space-x-2">
+                <div className="mt-6 flex justify-between items-center">
                     <button
-                        onClick={onTrueRandom}
-                        className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded flex items-center"
+                        onClick={handleResetToDefaults}
+                        className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded"
                     >
-                        <Shuffle className="mr-1" size={18} /> True Random
+                        Reset to Defaults
                     </button>
-                    <button
-                        onClick={onClose}
-                        className="bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={onGenerate}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded"
-                    >
-                        Generate Board
-                    </button>
+                    <div className="flex space-x-2">
+                        <button
+                            onClick={onClose}
+                            className="bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={() => onSave(localSettings, localWallCount)}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded"
+                        >
+                            Save
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
