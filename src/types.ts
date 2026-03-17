@@ -8,7 +8,8 @@ export enum CellType {
   Encounter = 'encounter',
   Treasure = 'treasure',
   Relic = 'relic',
-  Lock = 'lock'  // Add new Lock type
+  Lock = 'lock',
+  Goal = 'goal'
 }
 
 export enum ColorRequirement {
@@ -59,4 +60,20 @@ export interface CardDraw {
   value: CardValue;
   suit: 'hearts' | 'diamonds' | 'clubs' | 'spades';
   isPlaced: boolean;
+}
+
+export interface MazeSettings {
+  goalCount: number;
+  goalPathLength: number;
+}
+
+export interface BoardConfig {
+  id: string;
+  name: string;
+  boardSize: number;
+  cellTypeCounts: { [key in CellType]?: number };
+  colorRequirementCounts: { [key in ColorRequirement]?: number };
+  wallPercentage: number;
+  mazeSettings: MazeSettings;
+  createdAt: string;
 }
