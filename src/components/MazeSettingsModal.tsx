@@ -12,6 +12,7 @@ const DEFAULT_MAZE_SETTINGS: MazeSettings = {
     goalPathLength: 20,
     placementStrategy: 'random',
     coloredItemPercentage: 30,
+    difficultyZones: 3,
 };
 
 const MazeSettingsModal: React.FC<MazeSettingsModalProps> = ({ settings, onSave, onClose }) => {
@@ -112,6 +113,21 @@ const MazeSettingsModal: React.FC<MazeSettingsModalProps> = ({ settings, onSave,
                         />
                         <p className="text-xs text-gray-400 mt-1">
                             Probability that each placed item cell gets a random color background. Energy cells always have a color regardless.
+                        </p>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium mb-1">Difficulty Zones</label>
+                        <input
+                            type="number"
+                            min={0}
+                            max={5}
+                            value={local.difficultyZones ?? 0}
+                            onChange={e => setLocal({ ...local, difficultyZones: Math.max(0, Math.min(5, parseInt(e.target.value) || 0)) })}
+                            className="w-full border rounded px-3 py-2 text-sm"
+                        />
+                        <p className="text-xs text-gray-400 mt-1">
+                            Divides the maze into N difficulty bands radiating from the entrance (0 = disabled). Encounter cards are generated for each encounter cell based on its zone. Max 5.
                         </p>
                     </div>
                 </div>

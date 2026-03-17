@@ -1,4 +1,4 @@
-import { Board, Cell, CellType, ColorRequirement, MazeSettings } from '../types';
+import { Board, Cell, CellType, ColorRequirement, EncounterCard, MazeSettings } from '../types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -388,4 +388,94 @@ export function populateMaze(
     }
 
     return newBoard;
+}
+
+// ---------------------------------------------------------------------------
+// Difficulty zone encounter card generation
+// ---------------------------------------------------------------------------
+
+const ZONE_MONSTERS = [
+    ['Goblin', 'Rat', 'Skeleton', 'Bat'],
+    ['Orc', 'Wolf', 'Zombie', 'Kobold'],
+    ['Troll', 'Ghoul', 'Hobgoblin', 'Werewolf'],
+    ['Ogre', 'Vampire', 'Wight', 'Manticore'],
+    ['Dragon', 'Demon', 'Lich', 'Balrog'],
+];
+
+function zoneMonster(zone: number): string {
+    const list = ZONE_MONSTERS[Math.min(zone, ZONE_MONSTERS.length - 1)];
+    return list[Math.floor(Math.random() * list.length)];
+}
+
+function zoneStrength(zone: number): string {
+    const clamp = Math.min(zone, 4);
+    const bases = [2, 3, 5, 7, 10];
+    let current = bases[clamp] + Math.floor(Math.random() * 2);
+    const count = clamp + 2; // zone 0 → 2 values, zone 4 → 6 values
+    const values: number[] = [];
+    for (let i = 0; i < count; i++) {
+        values.push(current);
+        current += Math.floor(Math.random() * 2) + 1;
+    }
+    return values.join('/');
+}
+
+function zoneXP(zone: number): number {
+    // 1–2 XP per zone level (zone 0 → 1–2, zone 1 → 2–4, …)
+    const perZone = zone + 1;
+    return perZone + Math.floor(Math.random() * (perZone + 1));
+}
+
+function zoneGold(zone: number): number {
+    // 2–3 Gold per zone level (zone 0 → 2–3, zone 1 → 4–6, …)
+    const min = (zone + 1) * 2;
+    const max = (zone + 1) * 3;
+    return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+/**
+ * Generate encounter cards for every Encounter cell on the board.
+ * difficultyZones: how many difficulty bands to divide the board into.
+ *   0 or undefined → returns empty array (feature disabled).
+ */
+export function generateEncounterCards(
+    board: Board,
+    difficultyZones: number,
+): EncounterCard[] {
+    if (!difficultyZones || difficultyZones <= 0) return [];
+
+    const size = board.length;
+    let eRow = -1, eCol = -1;
+    for (let r = 0; r < size; r++)
+        for (let c = 0; c < size; c++)
+            if (board[r][c].type === CellType.Entrance) { eRow = r; eCol = c; }
+    if (eRow < 0) return [];
+
+    const dist = bfsDistances(board, eRow, eCol);
+    let maxDist = 0;
+    for (let r = 0; r < size; r++)
+        for (let c = 0; c < size; c++)
+            if (dist[r][c] !== Infinity) maxDist = Math.max(maxDist, dist[r][c]);
+    if (maxDist === 0) return [];
+
+    const cards: EncounterCard[] = [];
+    for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+            if (board[r][c].type !== CellType.Encounter) continue;
+            const d = dist[r][c];
+            if (d === Infinity) continue;
+            const zone = Math.min(
+                Math.floor((d / maxDist) * difficultyZones),
+                difficultyZones - 1,
+            );
+            cards.push({
+                row: r, col: c, zone,
+                monsterName: zoneMonster(zone),
+                strength: zoneStrength(zone),
+                xp: zoneXP(zone),
+                gold: zoneGold(zone),
+            });
+        }
+    }
+    return cards;
 }
