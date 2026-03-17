@@ -25,6 +25,9 @@ const DEFAULT_RANDOM_BOARD_SETTINGS: { [key in CellType | ColorRequirement]?: nu
   [CellType.Treasure]: 4,
   [CellType.Relic]: 6,
   [CellType.Goal]: 1,
+  [CellType.Energy]: 3,
+  [CellType.Trap]: 4,
+  [CellType.LostSoul]: 4,
   [ColorRequirement.Red]: 2,
   [ColorRequirement.Orange]: 2,
   [ColorRequirement.Yellow]: 2,
@@ -37,6 +40,7 @@ const DEFAULT_WALL_PERCENTAGE = 15;
 const DEFAULT_MAZE_SETTINGS: MazeSettings = {
   goalCount: 1,
   goalPathLength: 20,
+  coloredItemPercentage: 30,
 };
 
 function App() {
@@ -97,6 +101,7 @@ function App() {
   const [showGenerateDropdown, setShowGenerateDropdown] = useState<boolean>(false);
   const [showMazeDropdown, setShowMazeDropdown] = useState<boolean>(false);
   const [showMazePaths, setShowMazePaths] = useState<boolean>(false);
+  const [showTooltips, setShowTooltips] = useState<boolean>(true);
   const generateDropdownRef = useRef<HTMLDivElement>(null);
   const mazeDropdownRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -134,19 +139,23 @@ function App() {
   });
   const [configName, setConfigName] = useState<string>('My Config');
 
-  const mazePaths = useMemo(() => {
-    if (!showMazePaths) return new Set<string>();
+  const [mazePaths, goalDistances] = useMemo(() => {
+    if (!showMazePaths) return [new Set<string>(), new Map<string, number>()] as const;
     let eRow = -1, eCol = -1;
     for (let r = 0; r < board.length; r++)
       for (let c = 0; c < board[0].length; c++)
         if (board[r][c].type === CellType.Entrance) { eRow = r; eCol = c; }
-    if (eRow < 0) return new Set<string>();
+    if (eRow < 0) return [new Set<string>(), new Map<string, number>()] as const;
     const paths = new Set<string>();
+    const distances = new Map<string, number>();
     for (let r = 0; r < board.length; r++)
       for (let c = 0; c < board[0].length; c++)
-        if (board[r][c].type === CellType.Goal)
-          getShortestPath(board, eRow, eCol, r, c).forEach(([pr, pc]) => paths.add(`${pr},${pc}`));
-    return paths;
+        if (board[r][c].type === CellType.Goal) {
+          const path = getShortestPath(board, eRow, eCol, r, c);
+          path.forEach(([pr, pc]) => paths.add(`${pr},${pc}`));
+          if (path.length > 0) distances.set(`${r},${c}`, path.length - 1);
+        }
+    return [paths, distances] as const;
   }, [showMazePaths, board]);
 
   const handleCellClick = (row: number, col: number) => {
@@ -485,7 +494,7 @@ function App() {
         Object.values(ColorRequirement).includes(key as ColorRequirement)
       )
     ) as Partial<Record<ColorRequirement, number>>;
-    const newBoard = populateMaze(board, cellTypeCounts, colorRequirementCounts, mazeSettings.placementStrategy);
+    const newBoard = populateMaze(board, cellTypeCounts, colorRequirementCounts, mazeSettings.placementStrategy, mazeSettings.coloredItemPercentage ?? 0);
     setBoard(newBoard);
     setPlacedShapes([]);
   };
@@ -594,7 +603,7 @@ function App() {
                       <RefreshCw size={18} className="mr-1" /> Reset Board
                     </button>
                     <div className="relative" ref={generateDropdownRef}>
-                      <div className="flex items-center">
+                      <div className="flex">
                         <button
                           onClick={handleGenerateRandomBoard}
                           className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-l flex items-center"
@@ -603,17 +612,17 @@ function App() {
                         </button>
                         <button
                           onClick={() => setShowGenerateDropdown(prev => !prev)}
-                          className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded-r border-l border-green-500 flex items-center"
+                          className="bg-green-600 hover:bg-green-700 text-white px-2 rounded-r border-l border-green-500 flex items-center"
                           aria-label="More generate options"
                         >
                           <ChevronDown size={16} />
                         </button>
                       </div>
                       {showGenerateDropdown && (
-                        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-lg z-10 min-w-full">
+                        <div className="absolute left-0 top-full mt-1 bg-green-50 border border-green-200 rounded shadow-lg z-10 min-w-full">
                           <button
                             onClick={() => { handleTrueRandomBoard(); setShowGenerateDropdown(false); }}
-                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap"
+                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-green-800 hover:bg-green-100 whitespace-nowrap"
                           >
                             <Shuffle size={15} /> True Random
                           </button>
@@ -622,7 +631,7 @@ function App() {
                     </div>
 
                     <div className="relative" ref={mazeDropdownRef}>
-                      <div className="flex items-center">
+                      <div className="flex">
                         <button
                           onClick={handleGenerateMaze}
                           className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1 rounded-l flex items-center"
@@ -631,17 +640,17 @@ function App() {
                         </button>
                         <button
                           onClick={() => setShowMazeDropdown(prev => !prev)}
-                          className="bg-teal-600 hover:bg-teal-700 text-white px-2 py-1 rounded-r border-l border-teal-500 flex items-center"
+                          className="bg-teal-600 hover:bg-teal-700 text-white px-2 rounded-r border-l border-teal-500 flex items-center"
                           aria-label="More maze options"
                         >
                           <ChevronDown size={16} />
                         </button>
                       </div>
                       {showMazeDropdown && (
-                        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-lg z-10 min-w-full">
+                        <div className="absolute left-0 top-full mt-1 bg-teal-50 border border-teal-200 rounded shadow-lg z-10 min-w-full">
                           <button
                             onClick={() => { handlePopulateMaze(); setShowMazeDropdown(false); }}
-                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap"
+                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-teal-800 hover:bg-teal-100 whitespace-nowrap"
                           >
                             <Shuffle size={15} /> Populate Maze
                           </button>
@@ -655,6 +664,14 @@ function App() {
                       title="Highlight shortest path from Entrance to each Goal"
                     >
                       🗺 Show Path
+                    </button>
+                    <button
+                      onClick={() => setShowTooltips(prev => !prev)}
+                      className={`px-3 py-1 rounded flex items-center text-white text-sm ${showTooltips ? 'bg-indigo-500 hover:bg-indigo-600' : 'bg-gray-500 hover:bg-gray-600'
+                        }`}
+                      title="Toggle cell tooltips"
+                    >
+                      💬 Tooltips
                     </button>
                     <div className="flex items-center ml-2">
                       <button
@@ -683,6 +700,8 @@ function App() {
                   onCellClick={handleCellClick}
                   placedShapes={placedShapes}
                   highlightedCells={mazePaths}
+                  goalDistances={goalDistances}
+                  showTooltips={showTooltips}
                 />
               </div>
 
@@ -707,7 +726,7 @@ function App() {
                             }}
                             className={`p-2 rounded ${selectedTool === CellType.Empty && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
                           >
-                            Erase
+                            🛢️ Erase
                           </button>
                           <button
                             onClick={() => {
@@ -716,7 +735,7 @@ function App() {
                             }}
                             className={`p-2 rounded ${selectedTool === CellType.Wall && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
                           >
-                            Wall
+                            ⬛ Wall
                           </button>
                           <button
                             onClick={() => {
@@ -725,7 +744,7 @@ function App() {
                             }}
                             className={`p-2 rounded ${selectedTool === CellType.Entrance && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
                           >
-                            Entrance
+                            🚪 Entrance
                           </button>
                           <button
                             onClick={() => {
@@ -734,7 +753,7 @@ function App() {
                             }}
                             className={`p-2 rounded ${selectedTool === CellType.Key && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
                           >
-                            Key
+                            🔑 Key
                           </button>
                           <button
                             onClick={() => {
@@ -743,7 +762,7 @@ function App() {
                             }}
                             className={`p-2 rounded ${selectedTool === CellType.Lock && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
                           >
-                            Lock
+                            🔒 Lock
                           </button>
                           <button
                             onClick={() => {
@@ -752,7 +771,7 @@ function App() {
                             }}
                             className={`p-2 rounded ${selectedTool === CellType.Supplies && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
                           >
-                            Supplies
+                            🎒 Supplies
                           </button>
                           <button
                             onClick={() => {
@@ -761,7 +780,7 @@ function App() {
                             }}
                             className={`p-2 rounded ${selectedTool === CellType.Mana && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
                           >
-                            Mana
+                            ✨ Mana
                           </button>
                           <button
                             onClick={() => {
@@ -770,7 +789,7 @@ function App() {
                             }}
                             className={`p-2 rounded ${selectedTool === CellType.Encounter && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
                           >
-                            Encounter
+                            👾 Encounter
                           </button>
                           <button
                             onClick={() => {
@@ -779,7 +798,7 @@ function App() {
                             }}
                             className={`p-2 rounded ${selectedTool === CellType.Treasure && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
                           >
-                            Treasure
+                            💎 Treasure
                           </button>
                           <button
                             onClick={() => {
@@ -788,7 +807,7 @@ function App() {
                             }}
                             className={`p-2 rounded ${selectedTool === CellType.Relic && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
                           >
-                            Relic
+                            🏆 Relic
                           </button>
                           <button
                             onClick={() => {
@@ -798,6 +817,33 @@ function App() {
                             className={`p-2 rounded ${selectedTool === CellType.Goal && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
                           >
                             ⭐ Goal
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.Energy);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.Energy && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            ✚ Energy
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.Trap);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.Trap && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            💣 Trap
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedTool(CellType.LostSoul);
+                              setWallToolActive(false);
+                            }}
+                            className={`p-2 rounded ${selectedTool === CellType.LostSoul && !wallToolActive ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100'}`}
+                          >
+                            🕯️ Lost Soul
                           </button>
                         </div>
                       </div>

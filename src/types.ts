@@ -9,7 +9,10 @@ export enum CellType {
   Treasure = 'treasure',
   Relic = 'relic',
   Lock = 'lock',
-  Goal = 'goal'
+  Goal = 'goal',
+  Energy = 'energy',
+  Trap = 'trap',
+  LostSoul = 'lostsoul'
 }
 
 export enum ColorRequirement {
@@ -65,7 +68,8 @@ export interface CardDraw {
 export interface MazeSettings {
   goalCount: number;
   goalPathLength: number;
-  placementStrategy?: 'random' | 'depth-aware';
+  placementStrategy?: 'random' | 'depth-aware' | 'dead-ends';
+  coloredItemPercentage?: number;
 }
 
 export interface BoardConfig {

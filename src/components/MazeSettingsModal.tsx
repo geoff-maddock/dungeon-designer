@@ -11,6 +11,7 @@ const DEFAULT_MAZE_SETTINGS: MazeSettings = {
     goalCount: 1,
     goalPathLength: 20,
     placementStrategy: 'random',
+    coloredItemPercentage: 30,
 };
 
 const MazeSettingsModal: React.FC<MazeSettingsModalProps> = ({ settings, onSave, onClose }) => {
@@ -60,12 +61,12 @@ const MazeSettingsModal: React.FC<MazeSettingsModalProps> = ({ settings, onSave,
 
                     <div>
                         <label className="block text-sm font-medium mb-1">Populate Placement Strategy</label>
-                        <div className="flex gap-6 mt-1">
+                        <div className="flex gap-6 mt-1 flex-wrap">
                             <label className="flex items-center gap-2 text-sm cursor-pointer">
                                 <input
                                     type="radio"
                                     name="placementStrategy"
-                                    checked={local.placementStrategy !== 'depth-aware'}
+                                    checked={local.placementStrategy !== 'depth-aware' && local.placementStrategy !== 'dead-ends'}
                                     onChange={() => setLocal({ ...local, placementStrategy: 'random' })}
                                 />
                                 Random
@@ -79,9 +80,38 @@ const MazeSettingsModal: React.FC<MazeSettingsModalProps> = ({ settings, onSave,
                                 />
                                 Depth-Aware
                             </label>
+                            <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="placementStrategy"
+                                    checked={local.placementStrategy === 'dead-ends'}
+                                    onChange={() => setLocal({ ...local, placementStrategy: 'dead-ends' })}
+                                />
+                                Dead Ends
+                            </label>
                         </div>
                         <p className="text-xs text-gray-400 mt-1">
-                            Depth-Aware places easier items (Keys, Supplies, Mana) near the entrance and harder items (Encounters, Treasure, Relics) deeper in the maze.
+                            {local.placementStrategy === 'depth-aware' && 'Depth-Aware places easier items near the entrance and harder items deeper in the maze.'}
+                            {local.placementStrategy === 'dead-ends' && 'Dead Ends places Treasure and Relics at dead-end locations first. Other items are spread evenly between the entrance and dead ends.'}
+                            {(!local.placementStrategy || local.placementStrategy === 'random') && 'Random distributes all items uniformly across the maze.'}
+                        </p>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium mb-1">
+                            % of Items on a Colored Space: <span className="font-bold">{local.coloredItemPercentage ?? 30}%</span>
+                        </label>
+                        <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            step={5}
+                            value={local.coloredItemPercentage ?? 30}
+                            onChange={e => setLocal({ ...local, coloredItemPercentage: parseInt(e.target.value) })}
+                            className="w-full"
+                        />
+                        <p className="text-xs text-gray-400 mt-1">
+                            Probability that each placed item cell gets a random color background. Energy cells always have a color regardless.
                         </p>
                     </div>
                 </div>

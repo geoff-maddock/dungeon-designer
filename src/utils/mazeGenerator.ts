@@ -226,14 +226,17 @@ export function generateMazeBoard(size: number, settings: MazeSettings): Board {
  * dungeon contents placed randomly within reachable (non-wall, non-entrance) cells.
  *
  * cellTypeCounts: map of CellType → how many to place
- * colorRequirementCounts: map of ColorRequirement → how many to assign
- * strategy: 'random' (default) or 'depth-aware' (easier items near entrance, harder items deep)
+ * colorRequirementCounts: map of ColorRequirement → how many to assign to empty passage cells
+ * strategy: 'random' | 'depth-aware' | 'dead-ends'
+ * coloredItemPercentage: 0–100. Percentage of placed item cells that receive a random color.
+ *   Energy cells always receive a color regardless of this value.
  */
 export function populateMaze(
     board: Board,
     cellTypeCounts: Partial<Record<CellType, number>>,
     colorRequirementCounts: Partial<Record<ColorRequirement, number>>,
-    strategy: 'random' | 'depth-aware' = 'random',
+    strategy: 'random' | 'depth-aware' | 'dead-ends' = 'random',
+    coloredItemPercentage: number = 0,
 ): Board {
     // Deep-clone the board, preserving walls
     const newBoard: Board = board.map(row =>
@@ -253,15 +256,13 @@ export function populateMaze(
         }
     }
 
-    // Collect eligible cells (empty, reachable — walls are CellType.Empty with all walls closed in this model)
     const eligible = (r: number, c: number) => newBoard[r][c].type === CellType.Empty;
-
     const size = newBoard.length;
 
-    // For depth-aware strategy, compute BFS distances from entrance
+    // Compute BFS distances for depth-aware and dead-ends strategies
     let dist: number[][] | null = null;
     let maxDist = 0;
-    if (strategy === 'depth-aware') {
+    if (strategy === 'depth-aware' || strategy === 'dead-ends') {
         let eRow = -1, eCol = -1;
         for (let r = 0; r < size; r++)
             for (let c = 0; c < size; c++)
@@ -276,8 +277,10 @@ export function populateMaze(
 
     const LOW_VALUE = new Set<CellType>([CellType.Key, CellType.Lock, CellType.Supplies, CellType.Mana]);
     const HIGH_VALUE = new Set<CellType>([CellType.Encounter, CellType.Treasure, CellType.Relic]);
+    // Items placed at dead ends first in the dead-ends strategy
+    const DEAD_END_PRIORITY = new Set<CellType>([CellType.Treasure, CellType.Relic]);
 
-    const getEmptyCells = () => {
+    const getEmptyCells = (): [number, number][] => {
         const cells: [number, number][] = [];
         for (let r = 0; r < size; r++)
             for (let c = 0; c < size; c++)
@@ -285,8 +288,16 @@ export function populateMaze(
         return cells;
     };
 
+    // Returns true if a cell has exactly one open passage (dead end in the maze)
+    const isDeadEnd = (r: number, c: number): boolean => {
+        let open = 0;
+        for (const dir of DIRS) if (!newBoard[r][c].walls[dir.wall]) open++;
+        return open === 1;
+    };
+
     const placeType = (type: CellType, count: number) => {
         let pool = getEmptyCells();
+
         if (dist && strategy === 'depth-aware' && maxDist > 0) {
             if (LOW_VALUE.has(type)) {
                 const preferred = pool.filter(([r, c]) => dist![r][c] <= maxDist * 0.5);
@@ -295,8 +306,33 @@ export function populateMaze(
                 const preferred = pool.filter(([r, c]) => dist![r][c] > maxDist * 0.4);
                 if (preferred.length >= count) pool = preferred;
             }
+        } else if (dist && strategy === 'dead-ends' && maxDist > 0) {
+            const deadEnds = pool.filter(([r, c]) => isDeadEnd(r, c));
+
+            if (DEAD_END_PRIORITY.has(type)) {
+                // Place priority items at dead ends; fall back to deepest remaining cells
+                if (deadEnds.length >= count) {
+                    pool = shuffle(deadEnds);
+                } else {
+                    const deadEndSet = new Set(deadEnds.map(([r, c]) => `${r},${c}`));
+                    const rest = pool
+                        .filter(([r, c]) => !deadEndSet.has(`${r},${c}`))
+                        .sort((a, b) => dist![b[0]][b[1]] - dist![a[0]][a[1]]);
+                    pool = [...shuffle(deadEnds), ...rest];
+                }
+            } else {
+                // Other types: even split between near-entrance and dead-end zones
+                const half = Math.ceil(count / 2);
+                const nearEntrance = shuffle(pool.filter(([r, c]) => dist![r][c] <= maxDist * 0.35));
+                const fromEntrance = nearEntrance.slice(0, half);
+                const fromDeadEnds = shuffle(deadEnds).slice(0, count - fromEntrance.length);
+                const usedSet = new Set([...fromEntrance, ...fromDeadEnds].map(([r, c]) => `${r},${c}`));
+                const fallback = shuffle(pool.filter(([r, c]) => !usedSet.has(`${r},${c}`)));
+                pool = [...fromEntrance, ...fromDeadEnds, ...fallback];
+            }
         }
-        const candidates = shuffle(pool);
+
+        const candidates = strategy === 'dead-ends' ? pool : shuffle(pool);
         let placed = 0;
         for (const [r, c] of candidates) {
             if (placed >= count) break;
@@ -322,9 +358,33 @@ export function populateMaze(
         placeType(type, count ?? 0);
     }
 
+    // Assign colors to passage/empty cells based on colorRequirementCounts
     for (const [color, count] of Object.entries(colorRequirementCounts) as [ColorRequirement, number][]) {
         if (color === ColorRequirement.None) continue;
         placeColor(color, count ?? 0);
+    }
+
+    // Assign colors to placed item cells:
+    // - Energy always gets a random color
+    // - Other item cells: colored with probability = coloredItemPercentage / 100
+    const ALL_COLORS: ColorRequirement[] = [
+        ColorRequirement.Red, ColorRequirement.Orange, ColorRequirement.Yellow,
+        ColorRequirement.Green, ColorRequirement.Blue, ColorRequirement.Purple,
+    ];
+    const randomColor = () => ALL_COLORS[Math.floor(Math.random() * ALL_COLORS.length)];
+    const SKIP_TYPES = new Set<CellType>([CellType.Empty, CellType.Wall, CellType.Entrance, CellType.Goal]);
+
+    for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+            const cell = newBoard[r][c];
+            if (SKIP_TYPES.has(cell.type)) continue;
+            if (cell.type === CellType.Energy) {
+                // Energy is always paired with a color
+                cell.colorRequirement = randomColor();
+            } else if (coloredItemPercentage > 0 && Math.random() * 100 < coloredItemPercentage) {
+                cell.colorRequirement = randomColor();
+            }
+        }
     }
 
     return newBoard;
