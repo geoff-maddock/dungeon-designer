@@ -1,74 +1,121 @@
 import { Board, CellType, PlacedShape, CardValue } from '../types';
 import { CardDraw } from '../types';
 
-// Update findValidPlacement to ensure the adjacency rule is enforced
+// ---------------------------------------------------------------------------
+// Wall-respecting frontier
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the set of cells (as "row,col" strings) that are directly reachable
+ * from any cell already covered by placedShapes — i.e. adjacent and not
+ * separated by a wall — and not themselves covered by a placed shape.
+ */
+function buildFrontier(board: Board, placedShapes: PlacedShape[]): Set<string> {
+  const rows = board.length;
+  const cols = board[0].length;
+
+  const occupied = new Set<string>();
+  placedShapes.forEach(placed => {
+    for (let r = 0; r < placed.shape.length; r++) {
+      for (let c = 0; c < placed.shape[0].length; c++) {
+        if (placed.shape[r][c] === 1) {
+          occupied.add(`${placed.startRow + r},${placed.startCol + c}`);
+        }
+      }
+    }
+  });
+
+  const STEP = [
+    { dr: -1, dc: 0, fromWall: 'top' as const, toWall: 'bottom' as const },
+    { dr: 0, dc: 1, fromWall: 'right' as const, toWall: 'left' as const },
+    { dr: 1, dc: 0, fromWall: 'bottom' as const, toWall: 'top' as const },
+    { dr: 0, dc: -1, fromWall: 'left' as const, toWall: 'right' as const },
+  ];
+
+  const frontier = new Set<string>();
+  for (const key of occupied) {
+    const [r, c] = key.split(',').map(Number);
+    for (const { dr, dc, fromWall, toWall } of STEP) {
+      const nr = r + dr;
+      const nc = c + dc;
+      if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+      if (occupied.has(`${nr},${nc}`)) continue;
+      // Both sides of the boundary must be passable
+      if (board[r][c].walls[fromWall]) continue;
+      if (board[nr][nc].walls[toWall]) continue;
+      frontier.add(`${nr},${nc}`);
+    }
+  }
+  return frontier;
+}
+
+// ---------------------------------------------------------------------------
+// Placement search
+// ---------------------------------------------------------------------------
+
+/**
+ * Find a valid top-left start position for `shape` on `board`:
+ *
+ * - First shape (placedShapes is empty): at least one shape cell must land
+ *   on the Entrance cell.
+ * - Subsequent shapes: every internal step within the shape must not cross a
+ *   wall, and at least one shape cell must land on a frontier cell (a cell
+ *   reachable from existing shapes without crossing walls).
+ */
 export const findValidPlacement = (
   board: Board,
   shape: number[][],
   placedShapes: PlacedShape[]
 ): { row: number, col: number } | null => {
-  // Find entrance position first
-  let entranceRow = -1;
-  let entranceCol = -1;
+  const rows = board.length;
+  const cols = board[0].length;
 
-  for (let r = 0; r < board.length; r++) {
-    for (let c = 0; c < board[0].length; c++) {
-      if (board[r][c].type === CellType.Entrance) {
-        entranceRow = r;
-        entranceCol = c;
-        break;
-      }
-    }
-    if (entranceRow !== -1) break;
-  }
-
-  if (entranceRow === -1) return null; // No entrance found
-
-  // Generate all potential starting positions
-  const potentialPositions: { row: number, col: number }[] = [];
-
-  // If no shapes are placed yet, the first shape must cover the entrance
   if (placedShapes.length === 0) {
-    // Try different positions that would cover the entrance
-    for (let r = 0; r < shape.length; r++) {
-      for (let c = 0; c < shape[0].length; c++) {
-        if (shape[r][c] === 1) {
-          potentialPositions.push({
-            row: entranceRow - r,
-            col: entranceCol - c
-          });
+    // --- First shape: must overlap the entrance ---
+    let entranceRow = -1, entranceCol = -1;
+    outer: for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (board[r][c].type === CellType.Entrance) {
+          entranceRow = r; entranceCol = c;
+          break outer;
         }
       }
     }
-  } else {
-    // For subsequent shapes, find all positions adjacent to existing shapes
-    const adjacentPositions = new Set<string>();
+    if (entranceRow === -1) return null;
 
-    placedShapes.forEach(placed => {
-      for (let r = 0; r < placed.shape.length; r++) {
-        for (let c = 0; c < placed.shape[0].length; c++) {
-          if (placed.shape[r][c] === 1) {
-            // Add all four adjacent positions
-            adjacentPositions.add(`${placed.startRow + r - 1},${placed.startCol + c}`); // up
-            adjacentPositions.add(`${placed.startRow + r + 1},${placed.startCol + c}`); // down
-            adjacentPositions.add(`${placed.startRow + r},${placed.startCol + c - 1}`); // left
-            adjacentPositions.add(`${placed.startRow + r},${placed.startCol + c + 1}`); // right
+    // Try every cell in the shape as the one that covers the entrance
+    for (let sr = 0; sr < shape.length; sr++) {
+      for (let sc = 0; sc < shape[0].length; sc++) {
+        if (shape[sr][sc] === 1) {
+          const startRow = entranceRow - sr;
+          const startCol = entranceCol - sc;
+          if (canPlaceShapeAt(board, shape, startRow, startCol, placedShapes)) {
+            return { row: startRow, col: startCol };
           }
         }
       }
-    });
-
-    // Convert adjacency set back to positions array
-    adjacentPositions.forEach(pos => {
-      const [row, col] = pos.split(',').map(Number);
-      potentialPositions.push({ row, col });
-    });
+    }
+    return null;
   }
 
-  // Try each potential position
-  for (const pos of potentialPositions) {
-    if (canPlaceShapeAt(board, shape, pos.row, pos.col, placedShapes)) {
-      return pos;
+  // --- Subsequent shapes: wall-respecting frontier adjacency ---
+  const frontier = buildFrontier(board, placedShapes);
+
+  for (let startRow = 0; startRow <= rows - shape.length; startRow++) {
+    for (let startCol = 0; startCol <= cols - shape[0].length; startCol++) {
+      if (!canPlaceShapeAt(board, shape, startRow, startCol, placedShapes)) continue;
+
+      // Require that at least one shape cell lands in the frontier
+      let touchesFrontier = false;
+      done: for (let sr = 0; sr < shape.length; sr++) {
+        for (let sc = 0; sc < shape[0].length; sc++) {
+          if (shape[sr][sc] === 1 && frontier.has(`${startRow + sr},${startCol + sc}`)) {
+            touchesFrontier = true;
+            break done;
+          }
+        }
+      }
+      if (touchesFrontier) return { row: startRow, col: startCol };
     }
   }
 
@@ -150,29 +197,8 @@ const canPlaceShapeAt = (
           return false;
         }
 
-        // Check if this is a wall cell - cannot overlap walls
+        // Check if this is a wall cell - cannot overlap physical wall cells
         if (board[boardRow][boardCol].type === CellType.Wall) {
-          return false;
-        }
-
-        // Check for walls on cell boundaries
-        if (c < shape[0].length - 1 && shape[r][c + 1] === 1 &&
-          board[boardRow][boardCol].walls.right) {
-          return false;
-        }
-
-        if (r < shape.length - 1 && shape[r + 1][c] === 1 &&
-          board[boardRow][boardCol].walls.bottom) {
-          return false;
-        }
-
-        if (boardCol > 0 && c > 0 && shape[r][c - 1] === 1 &&
-          board[boardRow][boardCol - 1].walls.right) {
-          return false;
-        }
-
-        if (boardRow > 0 && r > 0 && shape[r - 1][c] === 1 &&
-          board[boardRow - 1][boardCol].walls.bottom) {
           return false;
         }
       }
