@@ -1,11 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Download, Upload, Save, Trash2, RefreshCw, Grid, Camera, Settings, ChevronDown, ChevronUp, Shuffle } from 'lucide-react';
 import BoardDesigner from './components/BoardDesigner';
 import ActionShapes from './components/ActionShapes';
 import CardDrawSimulator from './components/CardDrawSimulator';
 import { CellType, ColorRequirement, Board, ActionShape, PlacedShape, CardValue, MazeSettings, BoardConfig } from './types';
 import { generateRandomBoard } from './utils/boardGenerator';
-import { generateMazeBoard, populateMaze } from './utils/mazeGenerator';
+import { generateMazeBoard, populateMaze, getShortestPath } from './utils/mazeGenerator';
 import { placeShapeOnBoard } from './utils/gameLogic';
 import { exportBoardAsPNG } from './utils/imageExport';
 import RandomBoardSettings from './components/RandomBoardSettings';
@@ -96,6 +96,7 @@ function App() {
   const [mazeSettings, setMazeSettings] = useState<MazeSettings>(DEFAULT_MAZE_SETTINGS);
   const [showGenerateDropdown, setShowGenerateDropdown] = useState<boolean>(false);
   const [showMazeDropdown, setShowMazeDropdown] = useState<boolean>(false);
+  const [showMazePaths, setShowMazePaths] = useState<boolean>(false);
   const generateDropdownRef = useRef<HTMLDivElement>(null);
   const mazeDropdownRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -132,6 +133,21 @@ function App() {
     }
   });
   const [configName, setConfigName] = useState<string>('My Config');
+
+  const mazePaths = useMemo(() => {
+    if (!showMazePaths) return new Set<string>();
+    let eRow = -1, eCol = -1;
+    for (let r = 0; r < board.length; r++)
+      for (let c = 0; c < board[0].length; c++)
+        if (board[r][c].type === CellType.Entrance) { eRow = r; eCol = c; }
+    if (eRow < 0) return new Set<string>();
+    const paths = new Set<string>();
+    for (let r = 0; r < board.length; r++)
+      for (let c = 0; c < board[0].length; c++)
+        if (board[r][c].type === CellType.Goal)
+          getShortestPath(board, eRow, eCol, r, c).forEach(([pr, pc]) => paths.add(`${pr},${pc}`));
+    return paths;
+  }, [showMazePaths, board]);
 
   const handleCellClick = (row: number, col: number) => {
     const newBoard = [...board];
@@ -469,7 +485,7 @@ function App() {
         Object.values(ColorRequirement).includes(key as ColorRequirement)
       )
     ) as Partial<Record<ColorRequirement, number>>;
-    const newBoard = populateMaze(board, cellTypeCounts, colorRequirementCounts);
+    const newBoard = populateMaze(board, cellTypeCounts, colorRequirementCounts, mazeSettings.placementStrategy);
     setBoard(newBoard);
     setPlacedShapes([]);
   };
@@ -632,6 +648,14 @@ function App() {
                         </div>
                       )}
                     </div>
+                    <button
+                      onClick={() => setShowMazePaths(prev => !prev)}
+                      className={`px-3 py-1 rounded flex items-center text-white text-sm ${showMazePaths ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-gray-500 hover:bg-gray-600'
+                        }`}
+                      title="Highlight shortest path from Entrance to each Goal"
+                    >
+                      🗺 Show Path
+                    </button>
                     <div className="flex items-center ml-2">
                       <button
                         onClick={() => handleResizeBoard(boardSize - 1)}
@@ -658,6 +682,7 @@ function App() {
                   board={board}
                   onCellClick={handleCellClick}
                   placedShapes={placedShapes}
+                  highlightedCells={mazePaths}
                 />
               </div>
 

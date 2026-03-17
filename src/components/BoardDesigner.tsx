@@ -4,10 +4,11 @@ import { Board, CellType, ColorRequirement, PlacedShape, CardValue } from '../ty
 interface BoardDesignerProps {
   board: Board;
   onCellClick: (row: number, col: number) => void;
-  placedShapes?: PlacedShape[]; // Add this prop
+  placedShapes?: PlacedShape[];
+  highlightedCells?: Set<string>;
 }
 
-const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, placedShapes = [] }) => {
+const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, placedShapes = [], highlightedCells }) => {
   const [hoveredCell, setHoveredCell] = useState<{ row: number, col: number } | null>(null);
 
   const getCellColor = (type: CellType, colorRequirement: ColorRequirement): string => {
@@ -180,6 +181,7 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
           row.map((cell, colIndex) => {
             const hasWalls = cell.walls.top || cell.walls.right || cell.walls.bottom || cell.walls.left;
             const placedShape = getPlacedShapeInfo(rowIndex, colIndex);
+            const isHighlighted = highlightedCells?.has(`${rowIndex},${colIndex}`) ?? false;
 
             return (
               <div
@@ -191,6 +193,11 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
               >
                 {getCellIconWithStyle(cell.type)}
                 {cell.type === CellType.Empty && getColorText(cell.colorRequirement)}
+
+                {/* Path highlight overlay */}
+                {isHighlighted && (
+                  <div className="absolute inset-0 bg-emerald-300 bg-opacity-40 pointer-events-none" />
+                )}
 
                 {/* Action layer shape indicator */}
                 {placedShape && (

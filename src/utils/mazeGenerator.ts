@@ -150,6 +150,48 @@ function placeGoals(
 // ---------------------------------------------------------------------------
 
 /**
+ * BFS shortest path between two cells — returns list of [row, col] pairs
+ * from source to destination, or [] if no path exists.
+ * Passages are determined by wall flags.
+ */
+export function getShortestPath(
+    board: Board,
+    fromRow: number, fromCol: number,
+    toRow: number, toCol: number,
+): [number, number][] {
+    const size = board.length;
+    const key = (r: number, c: number) => `${r},${c}`;
+    const parent = new Map<string, [number, number] | null>();
+    parent.set(key(fromRow, fromCol), null);
+    const queue: [number, number][] = [[fromRow, fromCol]];
+
+    outer: while (queue.length > 0) {
+        const [r, c] = queue.shift()!;
+        if (r === toRow && c === toCol) break outer;
+        for (const dir of DIRS) {
+            if (board[r][c].walls[dir.wall]) continue;
+            const nr = r + dir.dr;
+            const nc = c + dir.dc;
+            if (nr < 0 || nr >= size || nc < 0 || nc >= size) continue;
+            const nk = key(nr, nc);
+            if (parent.has(nk)) continue;
+            parent.set(nk, [r, c]);
+            queue.push([nr, nc]);
+        }
+    }
+
+    const destKey = key(toRow, toCol);
+    if (!parent.has(destKey)) return [];
+    const path: [number, number][] = [];
+    let curr: [number, number] | null = [toRow, toCol];
+    while (curr !== null) {
+        path.unshift(curr);
+        curr = parent.get(key(curr[0], curr[1])) ?? null;
+    }
+    return path;
+}
+
+/**
  * Generate a full maze board.
  * - All cells start fully walled.
  * - DFS carves passages (walls removed between adjacent cells).
@@ -185,11 +227,13 @@ export function generateMazeBoard(size: number, settings: MazeSettings): Board {
  *
  * cellTypeCounts: map of CellType → how many to place
  * colorRequirementCounts: map of ColorRequirement → how many to assign
+ * strategy: 'random' (default) or 'depth-aware' (easier items near entrance, harder items deep)
  */
 export function populateMaze(
     board: Board,
     cellTypeCounts: Partial<Record<CellType, number>>,
     colorRequirementCounts: Partial<Record<ColorRequirement, number>>,
+    strategy: 'random' | 'depth-aware' = 'random',
 ): Board {
     // Deep-clone the board, preserving walls
     const newBoard: Board = board.map(row =>
@@ -213,6 +257,26 @@ export function populateMaze(
     const eligible = (r: number, c: number) => newBoard[r][c].type === CellType.Empty;
 
     const size = newBoard.length;
+
+    // For depth-aware strategy, compute BFS distances from entrance
+    let dist: number[][] | null = null;
+    let maxDist = 0;
+    if (strategy === 'depth-aware') {
+        let eRow = -1, eCol = -1;
+        for (let r = 0; r < size; r++)
+            for (let c = 0; c < size; c++)
+                if (newBoard[r][c].type === CellType.Entrance) { eRow = r; eCol = c; }
+        if (eRow >= 0) {
+            dist = bfsDistances(newBoard, eRow, eCol);
+            for (let r = 0; r < size; r++)
+                for (let c = 0; c < size; c++)
+                    if (dist[r][c] !== Infinity) maxDist = Math.max(maxDist, dist[r][c]);
+        }
+    }
+
+    const LOW_VALUE = new Set<CellType>([CellType.Key, CellType.Lock, CellType.Supplies, CellType.Mana]);
+    const HIGH_VALUE = new Set<CellType>([CellType.Encounter, CellType.Treasure, CellType.Relic]);
+
     const getEmptyCells = () => {
         const cells: [number, number][] = [];
         for (let r = 0; r < size; r++)
@@ -222,7 +286,17 @@ export function populateMaze(
     };
 
     const placeType = (type: CellType, count: number) => {
-        const candidates = shuffle(getEmptyCells());
+        let pool = getEmptyCells();
+        if (dist && strategy === 'depth-aware' && maxDist > 0) {
+            if (LOW_VALUE.has(type)) {
+                const preferred = pool.filter(([r, c]) => dist![r][c] <= maxDist * 0.5);
+                if (preferred.length >= count) pool = preferred;
+            } else if (HIGH_VALUE.has(type)) {
+                const preferred = pool.filter(([r, c]) => dist![r][c] > maxDist * 0.4);
+                if (preferred.length >= count) pool = preferred;
+            }
+        }
+        const candidates = shuffle(pool);
         let placed = 0;
         for (const [r, c] of candidates) {
             if (placed >= count) break;
