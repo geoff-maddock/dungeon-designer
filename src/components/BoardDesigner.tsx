@@ -8,9 +8,10 @@ interface BoardDesignerProps {
   highlightedCells?: Set<string>;
   goalDistances?: Map<string, number>;
   showTooltips?: boolean;
+  pinnedCell?: string | null;
 }
 
-const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, placedShapes = [], highlightedCells, goalDistances, showTooltips = true }) => {
+const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, placedShapes = [], highlightedCells, goalDistances, showTooltips = true, pinnedCell }) => {
   const [hoveredCell, setHoveredCell] = useState<{ row: number, col: number } | null>(null);
 
   const getCellColor = (type: CellType, colorRequirement: ColorRequirement): string => {
@@ -199,6 +200,7 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
             const hasWalls = cell.walls.top || cell.walls.right || cell.walls.bottom || cell.walls.left;
             const placedShape = getPlacedShapeInfo(rowIndex, colIndex);
             const isHighlighted = highlightedCells?.has(`${rowIndex},${colIndex}`) ?? false;
+            const isPinned = pinnedCell === `${rowIndex},${colIndex}`;
 
             return (
               <div
@@ -214,6 +216,11 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
                 {/* Path highlight overlay */}
                 {isHighlighted && (
                   <div className="absolute inset-0 bg-emerald-300 bg-opacity-40 pointer-events-none" />
+                )}
+
+                {/* Encounter card hover pin */}
+                {isPinned && (
+                  <div className="absolute inset-0 bg-orange-400 bg-opacity-60 pointer-events-none ring-2 ring-orange-500 z-20" />
                 )}
 
                 {/* Action layer shape indicator */}

@@ -3,14 +3,15 @@ import { Download, Upload, Save, Trash2, RefreshCw, Grid, Camera, Settings, Chev
 import BoardDesigner from './components/BoardDesigner';
 import ActionShapes from './components/ActionShapes';
 import CardDrawSimulator from './components/CardDrawSimulator';
-import { CellType, ColorRequirement, Board, ActionShape, PlacedShape, CardValue, MazeSettings, BoardConfig } from './types';
+import { CellType, ColorRequirement, Board, ActionShape, PlacedShape, CardValue, MazeSettings, BoardConfig, EncounterCard } from './types';
 import { generateRandomBoard } from './utils/boardGenerator';
-import { generateMazeBoard, populateMaze, getShortestPath } from './utils/mazeGenerator';
+import { generateMazeBoard, populateMaze, getShortestPath, generateEncounterCards } from './utils/mazeGenerator';
 import { placeShapeOnBoard } from './utils/gameLogic';
 import { exportBoardAsPNG } from './utils/imageExport';
 import RandomBoardSettings from './components/RandomBoardSettings';
 import MazeSettingsModal from './components/MazeSettingsModal';
 import BoardConfigManager from './components/BoardConfigManager';
+import EncounterPanel from './components/EncounterPanel';
 
 import TowerBoard from './components/TowerBoard';
 import ForestBoard from './components/ForestBoard';
@@ -41,6 +42,7 @@ const DEFAULT_MAZE_SETTINGS: MazeSettings = {
   goalCount: 1,
   goalPathLength: 20,
   coloredItemPercentage: 30,
+  difficultyZones: 3,
 };
 
 function App() {
@@ -102,6 +104,8 @@ function App() {
   const [showMazeDropdown, setShowMazeDropdown] = useState<boolean>(false);
   const [showMazePaths, setShowMazePaths] = useState<boolean>(false);
   const [showTooltips, setShowTooltips] = useState<boolean>(true);
+  const [encounterCards, setEncounterCards] = useState<EncounterCard[]>([]);
+  const [hoveredEncounterKey, setHoveredEncounterKey] = useState<string | null>(null);
   const generateDropdownRef = useRef<HTMLDivElement>(null);
   const mazeDropdownRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -497,6 +501,7 @@ function App() {
     const newBoard = populateMaze(board, cellTypeCounts, colorRequirementCounts, mazeSettings.placementStrategy, mazeSettings.coloredItemPercentage ?? 0);
     setBoard(newBoard);
     setPlacedShapes([]);
+    setEncounterCards(generateEncounterCards(newBoard, mazeSettings.difficultyZones ?? 0));
   };
 
   const navItems: { page: 'dungeon' | 'tower' | 'forest' | 'city'; label: string; icon: string }[] = [
@@ -702,7 +707,17 @@ function App() {
                   highlightedCells={mazePaths}
                   goalDistances={goalDistances}
                   showTooltips={showTooltips}
+                  pinnedCell={hoveredEncounterKey}
                 />
+                {encounterCards.length > 0 && (
+                  <div className="mt-4 bg-white rounded-lg shadow-md p-4">
+                    <EncounterPanel
+                      cards={encounterCards}
+                      difficultyZones={mazeSettings.difficultyZones ?? 3}
+                      onHoverCard={setHoveredEncounterKey}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="w-full md:w-1/3 space-y-4">

@@ -70,6 +70,18 @@ export interface MazeSettings {
   goalPathLength: number;
   placementStrategy?: 'random' | 'depth-aware' | 'dead-ends';
   coloredItemPercentage?: number;
+  difficultyZones?: number;
+}
+
+/** A generated encounter card for a single Encounter cell on the board. */
+export interface EncounterCard {
+  row: number;
+  col: number;
+  zone: number;        // 0-indexed difficulty zone (0 = easiest)
+  monsterName: string;
+  strength: string;    // e.g. "2/3/4" — increasing values per difficulty tier
+  xp: number;
+  gold: number;
 }
 
 export interface BoardConfig {
