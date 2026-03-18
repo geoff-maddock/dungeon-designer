@@ -1,6 +1,30 @@
 import React, { useState } from 'react';
 import { Board, CellType, ColorRequirement, PlacedShape, CardValue } from '../types';
 
+/** Per-cell traversal info produced by the card-draw simulator. */
+export interface TraversalEntry {
+  value: string;
+  suit: string;
+  turnIndex: number;
+}
+
+/**
+ * Cycling palette of translucent fill colours — one per turn index (mod length).
+ * Using inline rgba so Tailwind's JIT doesn't need to know about them at build time.
+ */
+const TURN_COLORS: string[] = [
+  'rgba(99,102,241,0.40)',   // indigo
+  'rgba(59,130,246,0.40)',   // blue
+  'rgba(6,182,212,0.40)',    // cyan
+  'rgba(20,184,166,0.40)',   // teal
+  'rgba(34,197,94,0.40)',    // green
+  'rgba(234,179,8,0.40)',    // yellow
+  'rgba(249,115,22,0.40)',   // orange
+  'rgba(239,68,68,0.40)',    // red
+  'rgba(236,72,153,0.40)',   // pink
+  'rgba(168,85,247,0.40)',   // violet
+];
+
 interface BoardDesignerProps {
   board: Board;
   onCellClick: (row: number, col: number) => void;
@@ -9,9 +33,10 @@ interface BoardDesignerProps {
   goalDistances?: Map<string, number>;
   showTooltips?: boolean;
   pinnedCell?: string | null;
+  traversedCells?: Map<string, TraversalEntry>;
 }
 
-const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, placedShapes = [], highlightedCells, goalDistances, showTooltips = true, pinnedCell }) => {
+const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, placedShapes = [], highlightedCells, goalDistances, showTooltips = true, pinnedCell, traversedCells }) => {
   const [hoveredCell, setHoveredCell] = useState<{ row: number, col: number } | null>(null);
 
   const getCellColor = (type: CellType, colorRequirement: ColorRequirement): string => {
@@ -201,6 +226,9 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
             const placedShape = getPlacedShapeInfo(rowIndex, colIndex);
             const isHighlighted = highlightedCells?.has(`${rowIndex},${colIndex}`) ?? false;
             const isPinned = pinnedCell === `${rowIndex},${colIndex}`;
+            const traversalEntry = cell.type !== CellType.Wall
+              ? traversedCells?.get(`${rowIndex},${colIndex}`) ?? null
+              : null;
 
             return (
               <div
@@ -212,6 +240,27 @@ const BoardDesigner: React.FC<BoardDesignerProps> = ({ board, onCellClick, place
               >
                 {getCellIconWithStyle(cell.type)}
                 {cell.type === CellType.Empty && getColorText(cell.colorRequirement)}
+
+                {/* Card-draw traversal overlay */}
+                {traversalEntry && (
+                  <div
+                    className="absolute inset-0 pointer-events-none z-10"
+                    style={{ backgroundColor: TURN_COLORS[traversalEntry.turnIndex % TURN_COLORS.length] }}
+                  >
+                    <span
+                      className="absolute bottom-0 right-0 text-white leading-none"
+                      style={{
+                        fontSize: '7px',
+                        fontWeight: 700,
+                        textShadow: '0 0 2px #000,0 0 2px #000',
+                        lineHeight: 1,
+                        padding: '1px 1px 0 0',
+                      }}
+                    >
+                      {traversalEntry.value}{getSuitSymbol(traversalEntry.suit)}
+                    </span>
+                  </div>
+                )}
 
                 {/* Path highlight overlay */}
                 {isHighlighted && (

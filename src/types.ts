@@ -94,3 +94,123 @@ export interface BoardConfig {
   mazeSettings: MazeSettings;
   createdAt: string;
 }
+
+// ---------------------------------------------------------------------------
+// Movement / card-draw simulation types
+// ---------------------------------------------------------------------------
+
+/** A single cell visited during a movement turn. */
+export interface MovementStep {
+  row: number;
+  col: number;
+  cellType: CellType;
+}
+
+export type TurnEventType =
+  | 'entrance'
+  | 'item_collected'
+  | 'encounter_found'
+  | 'encounter_won'
+  | 'encounter_lost'
+  | 'dead_end'
+  | 'completed'
+  | 'face_card_encounter';
+
+export interface TurnEvent {
+  type: TurnEventType;
+  message: string;
+  row?: number;
+  col?: number;
+}
+
+/** Full record of one card-draw turn. */
+export interface TurnRecord {
+  card: CardDraw;
+  stepsAllowed: number;
+  path: MovementStep[];
+  events: TurnEvent[];
+}
+
+// ---------------------------------------------------------------------------
+// Character Board types
+// ---------------------------------------------------------------------------
+
+export interface BodyLocation {
+  name: 'Head' | 'Torso' | 'Left Arm' | 'Right Arm' | 'Left Leg' | 'Right Leg';
+  woundSlots: number;
+  wounds: number;
+  armorSlots: number;
+  armor: number;
+}
+
+export interface CharacterAttributes {
+  brawn: number;
+  agility: number;
+  mind: number;
+  spirit: number;
+}
+
+export interface CharacterResources {
+  xp: number;
+  gold: number;
+  supplies: number;
+  mana: number;
+}
+
+export interface ColorEnergies {
+  red: number;
+  orange: number;
+  yellow: number;
+  green: number;
+  blue: number;
+  purple: number;
+}
+
+export type ScoringCategory = 'discovery' | 'champion' | 'arcana' | 'fortune';
+
+export type CharacterClass =
+  | 'Alchemist'
+  | 'Bard'
+  | 'Druid'
+  | 'Knight'
+  | 'Necromancer'
+  | 'Ranger';
+
+export interface ClassProgress {
+  className: CharacterClass;
+  level: number; // 0–9
+}
+
+export interface CharacterState {
+  name: string;
+  body: BodyLocation[];
+  attributes: CharacterAttributes;
+  resources: CharacterResources;
+  energies: ColorEnergies;
+  scoring: Record<ScoringCategory, number>;
+  classes: ClassProgress[];
+}
+
+export const DEFAULT_CHARACTER: CharacterState = {
+  name: 'Hero',
+  body: [
+    { name: 'Head', woundSlots: 2, wounds: 0, armorSlots: 2, armor: 0 },
+    { name: 'Torso', woundSlots: 4, wounds: 0, armorSlots: 4, armor: 0 },
+    { name: 'Left Arm', woundSlots: 2, wounds: 0, armorSlots: 2, armor: 0 },
+    { name: 'Right Arm', woundSlots: 2, wounds: 0, armorSlots: 2, armor: 0 },
+    { name: 'Left Leg', woundSlots: 2, wounds: 0, armorSlots: 2, armor: 0 },
+    { name: 'Right Leg', woundSlots: 2, wounds: 0, armorSlots: 2, armor: 0 },
+  ],
+  attributes: { brawn: 3, agility: 3, mind: 3, spirit: 3 },
+  resources: { xp: 0, gold: 0, supplies: 0, mana: 0 },
+  energies: { red: 0, orange: 0, yellow: 0, green: 0, blue: 0, purple: 0 },
+  scoring: { discovery: 0, champion: 0, arcana: 0, fortune: 0 },
+  classes: [
+    { className: 'Alchemist', level: 0 },
+    { className: 'Bard', level: 0 },
+    { className: 'Druid', level: 0 },
+    { className: 'Knight', level: 0 },
+    { className: 'Necromancer', level: 0 },
+    { className: 'Ranger', level: 0 },
+  ],
+};

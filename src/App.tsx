@@ -3,10 +3,9 @@ import { Download, Upload, Save, Trash2, RefreshCw, Grid, Camera, Settings, Chev
 import BoardDesigner from './components/BoardDesigner';
 import ActionShapes from './components/ActionShapes';
 import CardDrawSimulator from './components/CardDrawSimulator';
-import { CellType, ColorRequirement, Board, ActionShape, PlacedShape, CardValue, MazeSettings, BoardConfig, EncounterCard } from './types';
+import { CellType, ColorRequirement, Board, ActionShape, PlacedShape, MazeSettings, BoardConfig, EncounterCard } from './types';
 import { generateRandomBoard } from './utils/boardGenerator';
 import { generateMazeBoard, populateMaze, getShortestPath, generateEncounterCards } from './utils/mazeGenerator';
-import { placeShapeOnBoard } from './utils/gameLogic';
 import { exportBoardAsPNG } from './utils/imageExport';
 import RandomBoardSettings from './components/RandomBoardSettings';
 import MazeSettingsModal from './components/MazeSettingsModal';
@@ -16,6 +15,8 @@ import EncounterPanel from './components/EncounterPanel';
 import TowerBoard from './components/TowerBoard';
 import ForestBoard from './components/ForestBoard';
 import CityBoard from './components/CityBoard';
+import CharacterBoard from './components/CharacterBoard';
+import { CharacterState, DEFAULT_CHARACTER } from './types';
 
 const DEFAULT_RANDOM_BOARD_SETTINGS: { [key in CellType | ColorRequirement]?: number } = {
   [CellType.Key]: 3,
@@ -46,7 +47,19 @@ const DEFAULT_MAZE_SETTINGS: MazeSettings = {
 };
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<'dungeon' | 'tower' | 'forest' | 'city'>('dungeon');
+  const [currentPage, setCurrentPage] = useState<'dungeon' | 'tower' | 'forest' | 'city' | 'character'>('dungeon');
+
+  const [character, setCharacter] = useState<CharacterState>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('characterState') || 'null') ?? DEFAULT_CHARACTER;
+    } catch {
+      return DEFAULT_CHARACTER;
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('characterState', JSON.stringify(character));
+  }, [character]);
   const [boardSize, setBoardSize] = useState<number>(16);
   const [board, setBoard] = useState<Board>(() => {
     const initialBoard: Board = Array(16).fill(null).map(() =>
@@ -182,6 +195,7 @@ function App() {
   const handleResetDeck = () => {
     // Clear all placed shapes
     setPlacedShapes([]);
+    setTraversalMap(new Map());
 
     // Reset any traversed markers on the board
     const resetBoard = JSON.parse(JSON.stringify(board)) as Board;
@@ -300,24 +314,33 @@ function App() {
     setBoardSize(newSize);
   };
 
-  // Update the handlePlaceShape function
-  const handlePlaceShape = (
-    startRow: number,
-    startCol: number,
-    shape: number[][],
-    cardValue?: CardValue,
-    cardSuit?: string
-  ) => {
-    const newBoard = placeShapeOnBoard(board, shape, startRow, startCol);
-    setBoard(newBoard);
+  const [traversalMap, setTraversalMap] = useState<Map<string, { value: string; suit: string; turnIndex: number }>>(
+    new Map()
+  );
 
-    // If this is from a card draw, track the placed shape
-    if (cardValue && cardSuit) {
-      setPlacedShapes(prev => [
-        ...prev,
-        { shape, startRow, startCol, cardValue, cardSuit }
-      ]);
-    }
+  /** Mark each cell in the movement path as traversed and record card/turn for overlay. */
+  const handleMovePath = (
+    path: { row: number; col: number }[],
+    card: { value: string; suit: string },
+    turnIndex: number
+  ) => {
+    setBoard(prev => {
+      const newBoard = JSON.parse(JSON.stringify(prev)) as Board;
+      for (const { row, col } of path) {
+        newBoard[row][col].traversed = true;
+      }
+      return newBoard;
+    });
+    setTraversalMap(prev => {
+      const next = new Map(prev);
+      for (const { row, col } of path) {
+        // Only set if not already claimed by a previous turn
+        if (!next.has(`${row},${col}`)) {
+          next.set(`${row},${col}`, { value: card.value, suit: card.suit, turnIndex });
+        }
+      }
+      return next;
+    });
   };
 
   // Add a new function to handle saving the board as PNG
@@ -504,11 +527,12 @@ function App() {
     setEncounterCards(generateEncounterCards(newBoard, mazeSettings.difficultyZones ?? 0));
   };
 
-  const navItems: { page: 'dungeon' | 'tower' | 'forest' | 'city'; label: string; icon: string }[] = [
+  const navItems: { page: 'dungeon' | 'tower' | 'forest' | 'city' | 'character'; label: string; icon: string }[] = [
     { page: 'dungeon', label: 'Dungeon', icon: '🏰' },
     { page: 'tower', label: 'Tower', icon: '🗼' },
     { page: 'forest', label: 'Forest', icon: '🌲' },
     { page: 'city', label: 'City', icon: '🏙' },
+    { page: 'character', label: 'Character', icon: '⚔️' },
   ];
 
   return (
@@ -708,6 +732,7 @@ function App() {
                   goalDistances={goalDistances}
                   showTooltips={showTooltips}
                   pinnedCell={hoveredEncounterKey}
+                  traversedCells={traversalMap}
                 />
                 {encounterCards.length > 0 && (
                   <div className="mt-4 bg-white rounded-lg shadow-md p-4">
@@ -980,8 +1005,7 @@ function App() {
                     <div className="px-4 pb-4">
                       <CardDrawSimulator
                         board={board}
-                        actionShapes={actionShapes}
-                        onPlaceShape={handlePlaceShape}
+                        onMovePath={handleMovePath}
                         onResetDeck={handleResetDeck}
                       />
                     </div>
@@ -1091,6 +1115,7 @@ function App() {
         {currentPage === 'tower' && <div className="flex-1 overflow-auto"><TowerBoard /></div>}
         {currentPage === 'forest' && <div className="flex-1 overflow-auto"><ForestBoard /></div>}
         {currentPage === 'city' && <div className="flex-1 overflow-auto"><CityBoard /></div>}
+        {currentPage === 'character' && <div className="flex-1 overflow-auto"><CharacterBoard character={character} onChange={setCharacter} /></div>}
 
       </div>
     </div>
