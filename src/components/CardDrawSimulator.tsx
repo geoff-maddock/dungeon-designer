@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CardDraw, Board, TurnRecord, TurnEvent, MovementStep } from '../types';
+import { CardDraw, Board, TurnRecord, TurnEvent, MovementStep, CharacterState, EncounterCard, CellType, ColorRequirement } from '../types';
 import {
   createStandardDeck,
   shuffleDeck,
@@ -11,6 +11,9 @@ import {
 
 interface CardDrawSimulatorProps {
   board: Board;
+  character: CharacterState;
+  encounterCards: EncounterCard[];
+  onCharacterChange: (updated: CharacterState) => void;
   /** Called with each cell in the movement path so the parent can render overlays. */
   onMovePath: (path: { row: number; col: number }[], card: CardDraw, turnIndex: number) => void;
   onResetDeck: () => void;
@@ -28,10 +31,31 @@ interface PendingEncounter {
   /** All cells visited across the whole session — shared mutable reference. */
   visitedCells: Set<string>;
   collectedCells: Set<string>;
+  /** The encounter card data for the current encounter cell, if found. */
+  encounterCard: EncounterCard | null;
+  /** Numeric value of the card used for this turn. */
+  cardNumericValue: number;
+}
+
+/** State held while waiting for the player to resolve a trap mid-turn. */
+interface PendingTrap {
+  card: CardDraw;
+  turnIndex: number;
+  pathSoFar: MovementStep[];
+  eventsSoFar: TurnEvent[];
+  currentRow: number;
+  currentCol: number;
+  remainingSteps: number;
+  visitedCells: Set<string>;
+  collectedCells: Set<string>;
+  cardNumericValue: number;
 }
 
 const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
   board,
+  character,
+  encounterCards,
+  onCharacterChange,
   onMovePath,
   onResetDeck,
 }) => {
@@ -40,6 +64,7 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
   const [deck, setDeck] = useState<CardDraw[]>([]);
   const [turnHistory, setTurnHistory] = useState<TurnRecord[]>([]);
   const [pendingEncounter, setPendingEncounter] = useState<PendingEncounter | null>(null);
+  const [pendingTrap, setPendingTrap] = useState<PendingTrap | null>(null);
 
   /**
    * Items and encounters collected across all turns this session.
@@ -96,6 +121,7 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
 
   const drawCard = () => {
     if (pendingEncounter) return; // must resolve encounter first
+    if (pendingTrap) return;      // must resolve trap first
     if (deck.length === 0) return;
 
     const [newCard, ...rest] = deck;
@@ -105,17 +131,45 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
     const moveCount = getCardMoveCount(newCard.value);
 
     if (moveCount === null) {
-      // Face card — automatic encounter, no movement
-      const record: TurnRecord = {
+      // Face card — automatic encounter, no movement.
+      // Draw one more card from the deck to use as the combat roll.
+      // Pick a random encounter card (if any are defined) and route through
+      // the normal pendingEncounter flow so resolution is handled consistently.
+      turnIndexRef.current++;
+      const turnIndex = turnIndexRef.current;
+      const randomEncounter = encounterCards.length > 0
+        ? encounterCards[Math.floor(Math.random() * encounterCards.length)]
+        : null;
+
+      let combatCard: CardDraw | null = null;
+      let combatNumericValue = 0;
+      let deckAfterCombat = rest;
+      if (rest.length > 0) {
+        const [drawnCombat, ...remaining] = rest;
+        combatCard = drawnCombat;
+        combatNumericValue = getCardNumericValueHelper(drawnCombat.value);
+        deckAfterCombat = remaining;
+        setDrawnCards(prev => [...prev, drawnCombat]);
+        setDeck(deckAfterCombat);
+      }
+
+      setPendingEncounter({
         card: newCard,
-        stepsAllowed: 0,
-        path: [],
-        events: [{
+        turnIndex,
+        pathSoFar: [],
+        eventsSoFar: [{
           type: 'face_card_encounter',
-          message: `Drew ${newCard.value} of ${newCard.suit} — Automatic encounter!`,
+          message: `Drew ${newCard.value} of ${newCard.suit} — Automatic encounter!${randomEncounter ? ` Facing ${randomEncounter.monsterName}.` : ''
+            }${combatCard ? ` Combat card: ${combatCard.value} of ${combatCard.suit} (${combatNumericValue}).` : ''}`,
         }],
-      };
-      setTurnHistory(prev => [record, ...prev]);
+        currentRow: -1,
+        currentCol: -1,
+        remainingSteps: 0,
+        visitedCells: globalVisitedRef.current,
+        collectedCells: collectedCellsRef.current,
+        encounterCard: randomEncounter,
+        cardNumericValue: combatNumericValue,
+      });
       return;
     }
 
@@ -156,13 +210,15 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
       stepsToMove = moveCount;
     }
 
+    const cardNumericValue = getCardNumericValueHelper(newCard.value);
     const result = simulateMovement(
       board,
       startRow,
       startCol,
       stepsToMove,
       globalVisitedRef.current,
-      collectedCellsRef.current
+      collectedCellsRef.current,
+      cardNumericValue
     );
 
     // Extend the ordered path history with newly visited cells.
@@ -175,8 +231,12 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
     const turnIndex = turnIndexRef.current;
     onMovePath(fullPath.map(s => ({ row: s.row, col: s.col })), newCard, turnIndex);
 
+    // Apply immediate character changes from events (items collected, goals)
+    applyEventCharacterChanges(result.events);
+
     if (result.pausedAtEncounter) {
       const lastStep = result.path[result.path.length - 1];
+      const ec = encounterCards.find(c => c.row === lastStep.row && c.col === lastStep.col) ?? null;
       setPendingEncounter({
         card: newCard,
         turnIndex,
@@ -187,6 +247,22 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
         remainingSteps: result.remainingSteps,
         visitedCells: globalVisitedRef.current,
         collectedCells: collectedCellsRef.current,
+        encounterCard: ec,
+        cardNumericValue,
+      });
+    } else if (result.pausedAtTrap) {
+      const lastStep = result.path[result.path.length - 1];
+      setPendingTrap({
+        card: newCard,
+        turnIndex,
+        pathSoFar: fullPath,
+        eventsSoFar: result.events,
+        currentRow: lastStep.row,
+        currentCol: lastStep.col,
+        remainingSteps: result.remainingSteps,
+        visitedCells: globalVisitedRef.current,
+        collectedCells: collectedCellsRef.current,
+        cardNumericValue,
       });
     } else {
       const record: TurnRecord = {
@@ -200,16 +276,252 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
   };
 
   // -------------------------------------------------------------------------
+  // Character update helpers
+  // -------------------------------------------------------------------------
+
+  /** Returns the numeric value of a card (A=1, 2-10 face value, J/Q/K=0). */
+  const getCardNumericValueHelper = (value: string): number => {
+    if (value === 'A') return 1;
+    if (value === 'J' || value === 'Q' || value === 'K') return 0;
+    return parseInt(value, 10);
+  };
+
+  /**
+   * Apply immediate character stat changes from a list of events.
+   * Handles item_collected (resources/energies) and goal_reached.
+   */
+  const applyEventCharacterChanges = (events: TurnEvent[]) => {
+    let updated = { ...character };
+    let changed = false;
+
+    for (const ev of events) {
+      if (ev.type === 'item_collected') {
+        // Determine what the cell gives the player based on cell type (from message)
+        // The message includes the cellType string
+        if (ev.message.includes(CellType.Treasure)) {
+          updated = { ...updated, resources: { ...updated.resources, gold: updated.resources.gold + 1 } };
+          changed = true;
+        } else if (ev.message.includes(CellType.Mana)) {
+          updated = { ...updated, resources: { ...updated.resources, mana: updated.resources.mana + 1 } };
+          changed = true;
+        } else if (ev.message.includes(CellType.Supplies)) {
+          updated = { ...updated, resources: { ...updated.resources, supplies: updated.resources.supplies + 1 } };
+          changed = true;
+        } else if (ev.message.includes(CellType.Energy)) {
+          // Identify the color from colorRequirement
+          const color = ev.colorRequirement;
+          if (color && color !== ColorRequirement.None && color in updated.energies) {
+            updated = {
+              ...updated,
+              energies: {
+                ...updated.energies,
+                [color]: updated.energies[color as keyof typeof updated.energies] + 1,
+              },
+            };
+            changed = true;
+          }
+        }
+      } else if (ev.type === 'goal_reached') {
+        updated = {
+          ...updated,
+          resources: { ...updated.resources, xp: updated.resources.xp + 5 },
+          scoring: { ...updated.scoring, discovery: updated.scoring.discovery + 5 },
+        };
+        changed = true;
+      }
+    }
+
+    if (changed) onCharacterChange(updated);
+  };
+
+  /** Apply a wound to the character (distributes across body locations). */
+  const applyWounds = (char: CharacterState, count: number): CharacterState => {
+    let updated = { ...char, body: char.body.map(loc => ({ ...loc, hits: loc.hits ?? 0 })) };
+    for (let i = 0; i < count; i++) {
+      // Find the first body location with an available hit slot (Torso first, then others)
+      const torso = updated.body.find(loc => loc.name === 'Torso' && loc.hits < loc.woundSlots);
+      const target = torso ?? updated.body.find(loc => loc.hits < loc.woundSlots);
+      if (target) {
+        updated = {
+          ...updated,
+          body: updated.body.map(loc =>
+            loc.name === target.name ? { ...loc, hits: loc.hits + 1 } : loc
+          ),
+        };
+      }
+    }
+    // Recompute global wound count from body state
+    const newWounds = Math.min(10, updated.body.reduce(
+      (sum, loc) => sum + Math.max(0, loc.hits - loc.armor), 0
+    ));
+    return { ...updated, wounds: newWounds };
+  };
+
+  // -------------------------------------------------------------------------
+  // Trap resolution (auto-resolved based on card vs agility)
+  // -------------------------------------------------------------------------
+
+  const resolveTrap = () => {
+    if (!pendingTrap) return;
+    const pt = pendingTrap;
+    const agility = character.attributes.agility;
+    const trapTriggered = pt.cardNumericValue > agility;
+
+    let outcomeEvent: TurnEvent;
+    if (trapTriggered) {
+      outcomeEvent = {
+        type: 'trap_hit',
+        message: `Trap triggered! Card ${pt.cardNumericValue} > Agility ${agility} — took 1 wound. Movement ends.`,
+        row: pt.currentRow,
+        col: pt.currentCol,
+        woundsDealt: 1,
+      };
+      // Apply 1 wound
+      onCharacterChange(applyWounds(character, 1));
+      // Turn ends
+      const record: TurnRecord = {
+        card: pt.card,
+        stepsAllowed: getCardMoveCount(pt.card.value) ?? 0,
+        path: pt.pathSoFar,
+        events: [...pt.eventsSoFar, outcomeEvent],
+      };
+      setTurnHistory(prev => [record, ...prev]);
+      setPendingTrap(null);
+    } else {
+      outcomeEvent = {
+        type: 'trap_evaded',
+        message: `Trap evaded! Card ${pt.cardNumericValue} ≤ Agility ${agility} — continuing movement.`,
+        row: pt.currentRow,
+        col: pt.currentCol,
+      };
+
+      if (pt.remainingSteps === 0) {
+        const record: TurnRecord = {
+          card: pt.card,
+          stepsAllowed: getCardMoveCount(pt.card.value) ?? 0,
+          path: pt.pathSoFar,
+          events: [...pt.eventsSoFar, outcomeEvent],
+        };
+        setTurnHistory(prev => [record, ...prev]);
+        setPendingTrap(null);
+        return;
+      }
+
+      // Resume movement
+      const result = simulateMovement(
+        board,
+        pt.currentRow,
+        pt.currentCol,
+        pt.remainingSteps,
+        pt.visitedCells,
+        pt.collectedCells,
+        pt.cardNumericValue
+      );
+      for (const step of result.path) {
+        pathOrderRef.current.push({ row: step.row, col: step.col });
+      }
+      applyEventCharacterChanges(result.events);
+      const extendedPath = [...pt.pathSoFar, ...result.path];
+      onMovePath(result.path.map(s => ({ row: s.row, col: s.col })), pt.card, pt.turnIndex);
+
+      if (result.pausedAtEncounter) {
+        const lastStep = result.path[result.path.length - 1];
+        const ec = encounterCards.find(c => c.row === lastStep.row && c.col === lastStep.col) ?? null;
+        setPendingTrap(null);
+        setPendingEncounter({
+          card: pt.card,
+          turnIndex: pt.turnIndex,
+          pathSoFar: extendedPath,
+          eventsSoFar: [...pt.eventsSoFar, outcomeEvent, ...result.events],
+          currentRow: lastStep.row,
+          currentCol: lastStep.col,
+          remainingSteps: result.remainingSteps,
+          visitedCells: pt.visitedCells,
+          collectedCells: pt.collectedCells,
+          encounterCard: ec,
+          cardNumericValue: pt.cardNumericValue,
+        });
+      } else if (result.pausedAtTrap) {
+        const lastStep = result.path[result.path.length - 1];
+        setPendingTrap({
+          ...pt,
+          pathSoFar: extendedPath,
+          eventsSoFar: [...pt.eventsSoFar, outcomeEvent, ...result.events],
+          currentRow: lastStep.row,
+          currentCol: lastStep.col,
+          remainingSteps: result.remainingSteps,
+        });
+      } else {
+        const record: TurnRecord = {
+          card: pt.card,
+          stepsAllowed: getCardMoveCount(pt.card.value) ?? 0,
+          path: extendedPath,
+          events: [...pt.eventsSoFar, outcomeEvent, ...result.events],
+        };
+        setTurnHistory(prev => [record, ...prev]);
+        setPendingTrap(null);
+      }
+    }
+  };
+
+  // -------------------------------------------------------------------------
   // Encounter resolution
   // -------------------------------------------------------------------------
 
-  const resolveEncounter = (won: boolean) => {
+  /**
+   * Resolve a pending encounter automatically.
+   * Wounds dealt = number of STR values that exceed the attack roll.
+   * Win = zero wounds dealt;
+   * Loss = one or more wounds.
+   */
+  const resolveEncounter = () => {
     if (!pendingEncounter) return;
     const pe = pendingEncounter;
 
-    const outcomeEvent: TurnEvent = won
-      ? { type: 'encounter_won', message: 'Encounter won — continuing movement.' }
-      : { type: 'encounter_lost', message: 'Encounter lost — movement ends.' };
+    let xpGain = 0;
+    let goldGain = 0;
+    let woundsDealt = 0;
+    let won = false;
+    let outcomeMessage = '';
+
+    if (pe.encounterCard) {
+      const ec = pe.encounterCard;
+      const strengthValues = ec.strength.split('/').map(Number);
+      const attackRoll = pe.cardNumericValue + character.attributes.brawn;
+      woundsDealt = strengthValues.filter(s => s > attackRoll).length;
+      won = woundsDealt === 0;
+
+      if (won) {
+        xpGain = ec.xp;
+        goldGain = ec.gold;
+        outcomeMessage = `Encounter won! Attack ${attackRoll} (card ${pe.cardNumericValue} + Brawn ${character.attributes.brawn}) vs STR ${ec.strength}. +${xpGain} XP, +${goldGain} Gold, +1 Champion point.`;
+      } else {
+        xpGain = Math.floor(ec.xp / 2);
+        outcomeMessage = `Encounter lost! Attack ${attackRoll} (card ${pe.cardNumericValue} + Brawn ${character.attributes.brawn}) failed vs STR ${ec.strength}. Took ${woundsDealt} wound${woundsDealt > 1 ? 's' : ''}. +${xpGain} XP.`;
+      }
+    } else {
+      // No encounter card data — treat as a win with no rewards.
+      won = true;
+      outcomeMessage = 'Encounter resolved — continuing movement.';
+    }
+
+    const outcomeEvent: TurnEvent = {
+      type: won ? 'encounter_won' : 'encounter_lost',
+      message: outcomeMessage,
+      woundsDealt: woundsDealt > 0 ? woundsDealt : undefined,
+      encounterXp: xpGain > 0 ? xpGain : undefined,
+      encounterGold: goldGain > 0 ? goldGain : undefined,
+    };
+
+    // Apply character stat changes
+    let updatedChar = character;
+    if (woundsDealt > 0) updatedChar = applyWounds(updatedChar, woundsDealt);
+    if (xpGain > 0) updatedChar = { ...updatedChar, resources: { ...updatedChar.resources, xp: updatedChar.resources.xp + xpGain } };
+    if (goldGain > 0) updatedChar = { ...updatedChar, resources: { ...updatedChar.resources, gold: updatedChar.resources.gold + goldGain } };
+    if (won && pe.encounterCard) {
+      updatedChar = { ...updatedChar, scoring: { ...updatedChar.scoring, champion: updatedChar.scoring.champion + 1 } };
+    }
+    if (updatedChar !== character) onCharacterChange(updatedChar);
 
     if (!won || pe.remainingSteps === 0) {
       // Turn ends — encounter cell is already in pathOrderRef from when it was entered.
@@ -231,7 +543,8 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
       pe.currentCol,
       pe.remainingSteps,
       pe.visitedCells,
-      pe.collectedCells
+      pe.collectedCells,
+      pe.cardNumericValue
     );
 
     // Extend path history with cells visited while continuing after the encounter.
@@ -239,11 +552,13 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
       pathOrderRef.current.push({ row: step.row, col: step.col });
     }
 
+    applyEventCharacterChanges(result.events);
     const extendedPath = [...pe.pathSoFar, ...result.path];
     onMovePath(result.path.map(s => ({ row: s.row, col: s.col })), pe.card, pe.turnIndex);
 
     if (result.pausedAtEncounter) {
       const lastStep = result.path[result.path.length - 1];
+      const ec = encounterCards.find(c => c.row === lastStep.row && c.col === lastStep.col) ?? null;
       setPendingEncounter({
         ...pe,
         pathSoFar: extendedPath,
@@ -251,6 +566,22 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
         currentRow: lastStep.row,
         currentCol: lastStep.col,
         remainingSteps: result.remainingSteps,
+        encounterCard: ec,
+      });
+    } else if (result.pausedAtTrap) {
+      const lastStep = result.path[result.path.length - 1];
+      setPendingEncounter(null);
+      setPendingTrap({
+        card: pe.card,
+        turnIndex: pe.turnIndex,
+        pathSoFar: extendedPath,
+        eventsSoFar: [...pe.eventsSoFar, outcomeEvent, ...result.events],
+        currentRow: lastStep.row,
+        currentCol: lastStep.col,
+        remainingSteps: result.remainingSteps,
+        visitedCells: pe.visitedCells,
+        collectedCells: pe.collectedCells,
+        cardNumericValue: pe.cardNumericValue,
       });
     } else {
       const record: TurnRecord = {
@@ -272,6 +603,7 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
     setDrawnCards([]);
     setTurnHistory([]);
     setPendingEncounter(null);
+    setPendingTrap(null);
     collectedCellsRef.current = new Set();
     globalVisitedRef.current = new Set();
     pathOrderRef.current = [];
@@ -300,13 +632,16 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
   const eventColor = (type: TurnEvent['type']) => {
     switch (type) {
       case 'face_card_encounter': return 'text-red-700 font-semibold';
-      case 'encounter_found':     return 'text-orange-600 font-semibold';
-      case 'encounter_won':       return 'text-green-600';
-      case 'encounter_lost':      return 'text-red-600';
-      case 'item_collected':      return 'text-blue-600';
-      case 'dead_end':            return 'text-gray-500 italic';
-      case 'completed':           return 'text-gray-500 italic';
-      default:                    return 'text-gray-700';
+      case 'encounter_found': return 'text-orange-600 font-semibold';
+      case 'encounter_won': return 'text-green-600 font-semibold';
+      case 'encounter_lost': return 'text-red-600 font-semibold';
+      case 'trap_hit': return 'text-red-700 font-semibold';
+      case 'trap_evaded': return 'text-teal-600';
+      case 'goal_reached': return 'text-yellow-600 font-semibold';
+      case 'item_collected': return 'text-blue-600';
+      case 'dead_end': return 'text-gray-500 italic';
+      case 'completed': return 'text-gray-500 italic';
+      default: return 'text-gray-700';
     }
   };
 
@@ -338,7 +673,7 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
 
         <button
           onClick={drawCard}
-          disabled={deck.length === 0 || !!pendingEncounter}
+          disabled={deck.length === 0 || !!pendingEncounter || !!pendingTrap}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded text-sm disabled:opacity-40"
         >
           Draw Card ({deck.length})
@@ -352,28 +687,58 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
         </button>
       </div>
 
-      {/* Encounter resolution prompt */}
-      {pendingEncounter && (
-        <div className="border-2 border-orange-500 rounded p-3 bg-orange-50">
-          <p className="font-semibold text-orange-800 mb-2">
-            ⚔ Encounter! Resolve it, then record the outcome:
+      {/* Trap resolution prompt */}
+      {pendingTrap && (
+        <div className="border-2 border-yellow-600 rounded p-3 bg-yellow-50">
+          <p className="font-semibold text-yellow-800 mb-1">
+            💣 Trap! Card value: {pendingTrap.cardNumericValue} vs your Agility: {character.attributes.agility}
           </p>
-          <div className="flex gap-2">
-            <button
-              onClick={() => resolveEncounter(true)}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded text-sm"
-            >
-              Won — keep moving ({pendingEncounter.remainingSteps} step{pendingEncounter.remainingSteps !== 1 ? 's' : ''} left)
-            </button>
-            <button
-              onClick={() => resolveEncounter(false)}
-              className="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded text-sm"
-            >
-              Lost — end turn
-            </button>
-          </div>
+          <p className="text-sm text-yellow-700 mb-2">
+            {pendingTrap.cardNumericValue > character.attributes.agility
+              ? `Trap triggered — card (${pendingTrap.cardNumericValue}) beats agility (${character.attributes.agility}). You take 1 wound and movement ends.`
+              : `Trap evaded — card (${pendingTrap.cardNumericValue}) ≤ agility (${character.attributes.agility}). You may continue.`}
+          </p>
+          <button
+            onClick={resolveTrap}
+            className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-1.5 rounded text-sm"
+          >
+            Resolve Trap
+          </button>
         </div>
       )}
+
+      {/* Encounter resolution prompt */}
+      {pendingEncounter && (() => {
+        const ec = pendingEncounter.encounterCard;
+        const attackRoll = pendingEncounter.cardNumericValue + character.attributes.brawn;
+        const strengthValues = ec ? ec.strength.split('/').map(Number) : [];
+        const woundsPreview = strengthValues.filter(s => s > attackRoll).length;
+        const willWin = !ec || woundsPreview === 0;
+        return (
+          <div className="border-2 border-orange-500 rounded p-3 bg-orange-50">
+            <p className="font-semibold text-orange-800 mb-1">⚔ Encounter!</p>
+            {ec && (
+              <div className="text-sm text-orange-700 mb-2 space-y-0.5">
+                <div><span className="font-medium">{ec.monsterName}</span> — STR: {ec.strength}</div>
+                <div>Combat card: {pendingEncounter.cardNumericValue} + Brawn {character.attributes.brawn} = <span className="font-bold">{attackRoll}</span></div>
+                <div>Reward: {ec.xp} XP / {ec.gold} Gold</div>
+                <div className={willWin ? 'text-green-700 font-semibold' : 'text-red-700 font-semibold'}>
+                  {willWin
+                    ? `✓ Victory — attack ${attackRoll} beats all STR values`
+                    : `✗ Defeat — ${woundsPreview} wound${woundsPreview !== 1 ? 's' : ''} (${woundsPreview} STR value${woundsPreview !== 1 ? 's' : ''} exceed attack ${attackRoll})`
+                  }
+                </div>
+              </div>
+            )}
+            <button
+              onClick={resolveEncounter}
+              className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-1.5 rounded text-sm"
+            >
+              Resolve Encounter{pendingEncounter.remainingSteps > 0 && willWin ? ` (${pendingEncounter.remainingSteps} step${pendingEncounter.remainingSteps !== 1 ? 's' : ''} left)` : ''}
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Recently drawn cards */}
       {drawnCards.length > 0 && (

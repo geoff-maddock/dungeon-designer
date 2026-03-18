@@ -51,7 +51,15 @@ function App() {
 
   const [character, setCharacter] = useState<CharacterState>(() => {
     try {
-      return JSON.parse(localStorage.getItem('characterState') || 'null') ?? DEFAULT_CHARACTER;
+      const stored = JSON.parse(localStorage.getItem('characterState') || 'null');
+      if (!stored) return DEFAULT_CHARACTER;
+      // Migrate body locations: old format used `wounds` instead of `hits`.
+      // Also backfill the top-level `wounds` counter if missing.
+      const migratedBody = (stored.body ?? DEFAULT_CHARACTER.body).map((loc: Record<string, unknown>) => ({
+        ...loc,
+        hits: typeof loc.hits === 'number' ? loc.hits : (typeof loc.wounds === 'number' ? loc.wounds : 0),
+      }));
+      return { ...DEFAULT_CHARACTER, ...stored, body: migratedBody, wounds: typeof stored.wounds === 'number' ? stored.wounds : 0 };
     } catch {
       return DEFAULT_CHARACTER;
     }
@@ -1005,6 +1013,9 @@ function App() {
                     <div className="px-4 pb-4">
                       <CardDrawSimulator
                         board={board}
+                        character={character}
+                        encounterCards={encounterCards}
+                        onCharacterChange={setCharacter}
                         onMovePath={handleMovePath}
                         onResetDeck={handleResetDeck}
                       />

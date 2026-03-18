@@ -1,5 +1,5 @@
 import React from 'react';
-import { CharacterState, BodyLocation, ScoringCategory, CharacterClass } from '../types';
+import { CharacterState, BodyLocation, ScoringCategory, CharacterClass, DEFAULT_CHARACTER } from '../types';
 import { generateRandomCharacter, getScoringMilestones } from '../utils/characterGenerator';
 
 interface CharacterBoardProps {
@@ -100,8 +100,8 @@ function PipTrack({
                     title={`Set to ${i}`}
                     onClick={() => onSet(i)}
                     className={`w-5 h-5 rounded-full border-2 transition-colors ${i <= value
-                            ? `${activeClass} border-transparent`
-                            : 'bg-white border-gray-300 hover:border-gray-500'
+                        ? `${activeClass} border-transparent`
+                        : 'bg-white border-gray-300 hover:border-gray-500'
                         }`}
                 />
             ))}
@@ -109,64 +109,127 @@ function PipTrack({
     );
 }
 
-/** Pip slots for wounds or armor on a body location */
-function BodyPips({
-    count,
-    filled,
-    activeClass,
-    onToggle,
+// ---------------------------------------------------------------------------
+// BodyPartCard
+// ---------------------------------------------------------------------------
+
+function getBodyPenaltyLabel(name: BodyLocation['name']): string {
+    switch (name) {
+        case 'Head': return '−2 Mind';
+        case 'Torso': return '−2 Spirit';
+        case 'Left Arm': case 'Right Arm': return '−2 Brawn';
+        case 'Left Leg': case 'Right Leg': return '−1 Agility';
+    }
+}
+
+function BodyPartCard({
+    loc,
+    onHitsChange,
+    onArmorChange,
 }: {
-    count: number;
-    filled: number;
-    activeClass: string;
-    onToggle: (i: number) => void;
+    loc: BodyLocation;
+    onHitsChange: (newHits: number) => void;
+    onArmorChange: (newArmor: number) => void;
 }) {
+    const isFull = loc.hits >= loc.woundSlots;
+
+    function handleCircleClick(i: number) {
+        // Fill to i+1 if unfilled; clear back to i if already filled
+        onHitsChange(i < loc.hits ? i : Math.min(i + 1, loc.woundSlots));
+    }
+
     return (
-        <div className="flex gap-1">
-            {Array.from({ length: count }, (_, i) => (
+        <div className={`rounded border p-1.5 text-center min-w-[56px] ${isFull ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200'}`}>
+            {/* Name */}
+            <div className="text-[10px] font-semibold text-gray-500 mb-1 leading-tight">
+                {loc.name}
+            </div>
+
+            {/* Hit circles */}
+            <div className="flex gap-0.5 justify-center mb-1.5 flex-wrap">
+                {Array.from({ length: loc.woundSlots }, (_, i) => {
+                    const isArmored = i < loc.armor;
+                    const isHit = i < loc.hits;
+                    let cls = 'w-4 h-4 rounded-full border-2 transition-colors cursor-pointer ';
+                    if (isHit && isArmored) {
+                        cls += 'bg-blue-400 border-blue-500';        // armored hit — blocked
+                    } else if (isHit && !isArmored) {
+                        cls += 'bg-red-500 border-red-600';           // unarmored hit — wound
+                    } else if (!isHit && isArmored) {
+                        cls += 'bg-white border-blue-400 hover:bg-blue-50'; // armored, empty
+                    } else {
+                        cls += 'bg-white border-gray-300 hover:border-gray-500'; // normal, empty
+                    }
+                    return (
+                        <button
+                            key={i}
+                            onClick={() => handleCircleClick(i)}
+                            className={cls}
+                            title={`${isArmored ? 'Armored' : 'Unarmored'} slot ${i + 1}`}
+                        />
+                    );
+                })}
+            </div>
+
+            {/* Armor counter */}
+            <div className="flex items-center justify-center gap-0.5">
+                <span className="text-[11px] mr-0.5">🛡️</span>
                 <button
-                    key={i}
-                    onClick={() => onToggle(i)}
-                    className={`w-4 h-4 rounded-full border-2 transition-colors ${i < filled
-                            ? `${activeClass} border-transparent`
-                            : 'bg-white border-gray-300 hover:border-gray-500'
-                        }`}
-                />
-            ))}
+                    onClick={() => onArmorChange(Math.max(0, loc.armor - 1))}
+                    disabled={loc.armor <= 0}
+                    className="w-4 h-4 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 rounded text-xs font-bold leading-none flex items-center justify-center"
+                >−</button>
+                <span className="w-4 text-center text-xs text-blue-600 font-semibold">{loc.armor}</span>
+                <button
+                    onClick={() => onArmorChange(Math.min(loc.woundSlots, loc.armor + 1))}
+                    disabled={loc.armor >= loc.woundSlots}
+                    className="w-4 h-4 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 rounded text-xs font-bold leading-none flex items-center justify-center"
+                >+</button>
+            </div>
+
+            {/* Full indicator with penalty label */}
+            {isFull && (
+                <div className="text-[9px] text-red-600 font-bold mt-1 leading-tight">
+                    FULL<br /><span className="font-normal">{getBodyPenaltyLabel(loc.name)}</span>
+                </div>
+            )}
         </div>
     );
 }
 
 // ---------------------------------------------------------------------------
-// CharacterHeader
+// WoundTrack
 // ---------------------------------------------------------------------------
 
-function CharacterHeader({
-    name,
-    onNameChange,
-    onRandomize,
+const MAX_WOUNDS = 10;
+
+function WoundTrack({
+    wounds,
+    onSet,
 }: {
-    name: string;
-    onNameChange: (n: string) => void;
-    onRandomize: () => void;
+    wounds: number;
+    onSet: (v: number) => void;
 }) {
     return (
-        <header className="bg-stone-800 text-white p-4 shadow-md flex items-center gap-4 flex-shrink-0">
-            <h2 className="text-xl font-bold whitespace-nowrap">Character Board</h2>
-            <input
-                type="text"
-                value={name}
-                onChange={e => onNameChange(e.target.value)}
-                className="px-3 py-1 rounded text-black font-semibold text-lg flex-1 max-w-xs"
-                placeholder="Character Name"
-            />
-            <button
-                onClick={onRandomize}
-                className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-1 rounded font-medium ml-auto"
-            >
-                🎲 Randomize
-            </button>
-        </header>
+        <div className="mt-2 p-2 bg-red-50 rounded border border-red-200">
+            <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-semibold text-red-700 uppercase tracking-wide">Wounds</span>
+                <span className="text-xs text-red-500 font-medium">{wounds} / {MAX_WOUNDS}</span>
+            </div>
+            <div className="flex gap-0.5">
+                {Array.from({ length: MAX_WOUNDS }, (_, i) => (
+                    <button
+                        key={i}
+                        onClick={() => onSet(i < wounds ? i : i + 1)}
+                        className={`text-lg leading-none transition-colors ${i < wounds
+                            ? 'text-red-500 hover:text-red-300'
+                            : 'text-gray-200 hover:text-red-300'
+                            }`}
+                        title={`${i + 1} wound${i + 1 !== 1 ? 's' : ''}`}
+                    >♥</button>
+                ))}
+            </div>
+        </div>
     );
 }
 
@@ -174,51 +237,25 @@ function CharacterHeader({
 // BodyDiagram
 // ---------------------------------------------------------------------------
 
+/** Global wound count = total unblocked hits across all body parts, max 10. */
+function computeWounds(body: BodyLocation[]): number {
+    return Math.min(MAX_WOUNDS, body.reduce((sum, loc) => sum + Math.max(0, loc.hits - loc.armor), 0));
+}
+
 function BodyDiagram({
     body,
-    onChange,
+    wounds,
+    onBodyChange,
+    onWoundsChange,
 }: {
     body: BodyLocation[];
-    onChange: (updated: BodyLocation[]) => void;
+    wounds: number;
+    onBodyChange: (updated: BodyLocation[]) => void;
+    onWoundsChange: (w: number) => void;
 }) {
-    function toggleWound(locName: string, i: number) {
-        const updated = body.map(loc => {
-            if (loc.name !== locName) return loc;
-            const newWounds = i < loc.wounds ? i : i + 1;
-            return { ...loc, wounds: Math.min(newWounds, loc.woundSlots) };
-        });
-        onChange(updated);
-    }
-
-    function toggleArmor(locName: string, i: number) {
-        const updated = body.map(loc => {
-            if (loc.name !== locName) return loc;
-            const newArmor = i < loc.armor ? i : i + 1;
-            return { ...loc, armor: Math.min(newArmor, loc.armorSlots) };
-        });
-        onChange(updated);
-    }
-
-    function LocRow({ loc }: { loc: BodyLocation }) {
-        return (
-            <div className="flex items-center gap-2 py-1">
-                <span className="w-20 text-xs font-medium text-gray-700 text-right">{loc.name}</span>
-                <div className="flex flex-col gap-0.5">
-                    <BodyPips
-                        count={loc.woundSlots}
-                        filled={loc.wounds}
-                        activeClass="bg-red-500"
-                        onToggle={i => toggleWound(loc.name, i)}
-                    />
-                    <BodyPips
-                        count={loc.armorSlots}
-                        filled={loc.armor}
-                        activeClass="bg-yellow-400"
-                        onToggle={i => toggleArmor(loc.name, i)}
-                    />
-                </div>
-            </div>
-        );
+    function updateLoc(name: string, patch: Partial<BodyLocation>) {
+        const newBody = body.map(loc => loc.name === name ? { ...loc, ...patch } : loc);
+        onBodyChange(newBody);
     }
 
     const headLoc = body.find(l => l.name === 'Head')!;
@@ -231,29 +268,106 @@ function BodyDiagram({
     return (
         <div className="bg-white rounded-lg shadow p-3">
             <h3 className="font-semibold text-gray-700 mb-2 text-sm uppercase tracking-wide">Body</h3>
-            <div className="text-xs text-gray-400 flex gap-6 mb-1 ml-[5.5rem]">
-                <span>🔴 Wounds</span>
-                <span>🛡️ Armor</span>
+
+            {/* Legend */}
+            <div className="flex flex-wrap gap-2 text-[10px] text-gray-400 mb-2">
+                <span className="flex items-center gap-1">
+                    <span className="inline-block w-3 h-3 rounded-full bg-white border-2 border-blue-400" />
+                    Armored
+                </span>
+                <span className="flex items-center gap-1">
+                    <span className="inline-block w-3 h-3 rounded-full bg-blue-400 border-2 border-blue-500" />
+                    Blocked
+                </span>
+                <span className="flex items-center gap-1">
+                    <span className="inline-block w-3 h-3 rounded-full bg-red-500 border-2 border-red-600" />
+                    Wound
+                </span>
             </div>
-            {/* Simple visual body layout */}
-            <div className="flex flex-col items-center gap-0">
+
+            {/* Humanoid body layout */}
+            <div className="flex flex-col items-center gap-1.5">
                 {/* Head */}
-                <div className="mb-1">
-                    <LocRow loc={headLoc} />
-                </div>
+                <BodyPartCard
+                    loc={headLoc}
+                    onHitsChange={h => updateLoc('Head', { hits: h })}
+                    onArmorChange={a => updateLoc('Head', { armor: a })}
+                />
                 {/* Arms + Torso */}
                 <div className="flex items-start gap-1">
-                    <LocRow loc={lArmLoc} />
-                    <LocRow loc={torsoLoc} />
-                    <LocRow loc={rArmLoc} />
+                    <BodyPartCard
+                        loc={lArmLoc}
+                        onHitsChange={h => updateLoc('Left Arm', { hits: h })}
+                        onArmorChange={a => updateLoc('Left Arm', { armor: a })}
+                    />
+                    <BodyPartCard
+                        loc={torsoLoc}
+                        onHitsChange={h => updateLoc('Torso', { hits: h })}
+                        onArmorChange={a => updateLoc('Torso', { armor: a })}
+                    />
+                    <BodyPartCard
+                        loc={rArmLoc}
+                        onHitsChange={h => updateLoc('Right Arm', { hits: h })}
+                        onArmorChange={a => updateLoc('Right Arm', { armor: a })}
+                    />
                 </div>
                 {/* Legs */}
-                <div className="flex gap-4 mt-1">
-                    <LocRow loc={lLegLoc} />
-                    <LocRow loc={rLegLoc} />
+                <div className="flex gap-1">
+                    <BodyPartCard
+                        loc={lLegLoc}
+                        onHitsChange={h => updateLoc('Left Leg', { hits: h })}
+                        onArmorChange={a => updateLoc('Left Leg', { armor: a })}
+                    />
+                    <BodyPartCard
+                        loc={rLegLoc}
+                        onHitsChange={h => updateLoc('Right Leg', { hits: h })}
+                        onArmorChange={a => updateLoc('Right Leg', { armor: a })}
+                    />
                 </div>
             </div>
+
+            {/* Global wound track */}
+            <WoundTrack wounds={wounds} onSet={onWoundsChange} />
         </div>
+    );
+}
+
+function CharacterHeader({
+    name,
+    onNameChange,
+    onRandomize,
+    onReset,
+}: {
+    name: string;
+    onNameChange: (n: string) => void;
+    onRandomize: () => void;
+    onReset: () => void;
+}) {
+    return (
+        <header className="bg-stone-800 text-white p-4 shadow-md flex items-center gap-4 flex-shrink-0">
+            <h2 className="text-xl font-bold whitespace-nowrap">Character Board</h2>
+            <input
+                type="text"
+                value={name}
+                onChange={e => onNameChange(e.target.value)}
+                className="px-3 py-1 rounded text-black font-semibold text-lg flex-1 max-w-xs"
+                placeholder="Character Name"
+            />
+            <div className="flex gap-2 ml-auto">
+                <button
+                    onClick={onReset}
+                    className="bg-stone-500 hover:bg-stone-600 text-white px-4 py-1 rounded font-medium"
+                >
+                    ↺ Reset
+                </button>
+                <button
+                    onClick={onRandomize}
+                    className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-1 rounded font-medium"
+                >
+                    🎲 Randomize
+                </button>
+            </div>
+        </header>
     );
 }
 
@@ -408,7 +522,7 @@ function ScoringTrack({
                             className={`
                 h-4 transition-colors border
                 ${isMilestone ? 'w-5 rounded' : 'w-3 rounded-sm'}
-                ${i <= value
+                ${i > 0 && i <= value
                                     ? `${activeColor} border-transparent`
                                     : isMilestone
                                         ? 'bg-gray-200 border-gray-400 hover:bg-gray-300'
@@ -492,8 +606,8 @@ function ClassRow({
                         title={`Level ${i + 1}`}
                         onClick={() => onSet(i + 1 === level ? 0 : i + 1)}
                         className={`w-6 h-6 rounded-full border-2 text-xs font-bold transition-colors ${i + 1 <= level
-                                ? 'bg-stone-600 border-stone-600 text-white'
-                                : 'bg-white border-gray-300 hover:border-gray-500 text-gray-300'
+                            ? 'bg-stone-600 border-stone-600 text-white'
+                            : 'bg-white border-gray-300 hover:border-gray-500 text-gray-300'
                             }`}
                     >
                         {i + 1}
@@ -562,6 +676,7 @@ const CharacterBoard: React.FC<CharacterBoardProps> = ({ character, onChange }) 
                 name={character.name}
                 onNameChange={n => update('name', n)}
                 onRandomize={() => onChange(generateRandomCharacter())}
+                onReset={() => onChange(DEFAULT_CHARACTER)}
             />
 
             <div className="flex flex-1 overflow-auto gap-4 p-4">
@@ -569,7 +684,12 @@ const CharacterBoard: React.FC<CharacterBoardProps> = ({ character, onChange }) 
                 <div className="flex flex-col gap-4 w-96 flex-shrink-0">
                     <BodyDiagram
                         body={character.body}
-                        onChange={b => update('body', b)}
+                        wounds={character.wounds}
+                        onBodyChange={newBody => {
+                            const newWounds = computeWounds(newBody);
+                            onChange({ ...character, body: newBody, wounds: newWounds });
+                        }}
+                        onWoundsChange={w => onChange({ ...character, wounds: w })}
                     />
                     <AttributeTracks
                         attributes={character.attributes}
