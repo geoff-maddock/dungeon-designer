@@ -1,4 +1,4 @@
-import { Board, CellType, PlacedShape, CardValue } from '../types';
+import { Board, CellType, PlacedShape, CardValue, MovementStep, TurnEvent, TurnRecord } from '../types';
 import { CardDraw } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -260,4 +260,174 @@ export const shuffleDeck = <T>(deck: T[]): T[] => {
     [newDeck[i], newDeck[j]] = [newDeck[j], newDeck[i]];
   }
   return newDeck;
+};
+
+// ---------------------------------------------------------------------------
+// Movement simulation
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the number of spaces the player moves for a given card value.
+ * Returns null for face cards (J, Q, K) which trigger an encounter instead.
+ * Ace = 1 (low card).
+ */
+export const getCardMoveCount = (value: CardValue): number | null => {
+  if (value === 'J' || value === 'Q' || value === 'K') return null;
+  if (value === 'A') return 1;
+  return parseInt(value, 10);
+};
+
+/** Cell types that are collectible items (non-blocking events). */
+const ITEM_CELL_TYPES = new Set<CellType>([
+  CellType.Key,
+  CellType.Supplies,
+  CellType.Mana,
+  CellType.Treasure,
+  CellType.Relic,
+  CellType.Energy,
+  CellType.LostSoul,
+]);
+
+/** Find the entrance cell on the board. Returns null if not found. */
+export const findEntrance = (board: Board): { row: number; col: number } | null => {
+  for (let r = 0; r < board.length; r++) {
+    for (let c = 0; c < board[0].length; c++) {
+      if (board[r][c].type === CellType.Entrance) return { row: r, col: c };
+    }
+  }
+  return null;
+};
+
+const DIRECTIONS = [
+  { dr: -1, dc: 0, fromWall: 'top' as const, toWall: 'bottom' as const },
+  { dr: 0, dc: 1, fromWall: 'right' as const, toWall: 'left' as const },
+  { dr: 1, dc: 0, fromWall: 'bottom' as const, toWall: 'top' as const },
+  { dr: 0, dc: -1, fromWall: 'left' as const, toWall: 'right' as const },
+];
+
+/**
+ * Returns all valid adjacent cells the player can step into from (row, col).
+ * A step is blocked if:
+ *   - A wall separates the two cells
+ *   - The target cell is a Wall-type cell
+ *   - The target cell was already visited this turn (no backtracking)
+ */
+export const getValidNeighbors = (
+  board: Board,
+  row: number,
+  col: number,
+  visitedThisTurn: Set<string>
+): { row: number; col: number }[] => {
+  const rows = board.length;
+  const cols = board[0].length;
+  const result: { row: number; col: number }[] = [];
+
+  for (const { dr, dc, fromWall, toWall } of DIRECTIONS) {
+    const nr = row + dr;
+    const nc = col + dc;
+    if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+    if (visitedThisTurn.has(`${nr},${nc}`)) continue;
+    if (board[nr][nc].type === CellType.Wall) continue;
+    if (board[row][col].walls[fromWall]) continue;
+    if (board[nr][nc].walls[toWall]) continue;
+    result.push({ row: nr, col: nc });
+  }
+  return result;
+};
+
+export interface PartialMoveResult {
+  path: MovementStep[];
+  events: TurnEvent[];
+  /**
+   * Set when movement pauses mid-turn at an encounter cell.
+   * Contains remaining steps the player still has after resolving (or losing)
+   * the encounter.
+   */
+  pausedAtEncounter: boolean;
+  remainingSteps: number;
+}
+
+/**
+ * Simulates player movement from a given starting cell for up to `steps`
+ * spaces (the starting cell itself does NOT count as a step consumed).
+ *
+ * Movement stops early when:
+ *   - The player runs out of steps
+ *   - There are no valid neighbouring cells (dead end — no backtracking)
+ *   - An un-collected Encounter cell is entered (pause for resolution)
+ *
+ * @param board          Current board state
+ * @param startRow       Row of the starting cell (entrance or resume position)
+ * @param startCol       Col of the starting cell
+ * @param steps          Number of spaces remaining to move
+ * @param visitedThisTurn Cells already visited this turn (updated in place)
+ * @param collectedCells  Cells whose items have already been picked up (by key "r,c")
+ */
+export const simulateMovement = (
+  board: Board,
+  startRow: number,
+  startCol: number,
+  steps: number,
+  visitedThisTurn: Set<string>,
+  collectedCells: Set<string>
+): PartialMoveResult => {
+  const path: MovementStep[] = [];
+  const events: TurnEvent[] = [];
+
+  let curRow = startRow;
+  let curCol = startCol;
+  let remaining = steps;
+
+  while (remaining > 0) {
+    const neighbors = getValidNeighbors(board, curRow, curCol, visitedThisTurn);
+
+    if (neighbors.length === 0) {
+      events.push({ type: 'dead_end', message: 'Dead end — movement ends.', row: curRow, col: curCol });
+      return { path, events, pausedAtEncounter: false, remainingSteps: 0 };
+    }
+
+    // Choose next cell: prefer untraversed cells, then random among all options
+    const untraversed = neighbors.filter(n => !board[n.row][n.col].traversed);
+    const chosen = untraversed.length > 0
+      ? untraversed[Math.floor(Math.random() * untraversed.length)]
+      : neighbors[Math.floor(Math.random() * neighbors.length)];
+
+    visitedThisTurn.add(`${chosen.row},${chosen.col}`);
+    const cellType = board[chosen.row][chosen.col].type;
+    path.push({ row: chosen.row, col: chosen.col, cellType });
+    remaining--;
+
+    // Collect items
+    const cellKey = `${chosen.row},${chosen.col}`;
+    if (ITEM_CELL_TYPES.has(cellType) && !collectedCells.has(cellKey)) {
+      collectedCells.add(cellKey);
+      events.push({
+        type: 'item_collected',
+        message: `Collected ${cellType} at (${chosen.row}, ${chosen.col}).`,
+        row: chosen.row,
+        col: chosen.col,
+      });
+    }
+
+    // Encounter — pause for resolution
+    if (cellType === CellType.Encounter && !collectedCells.has(cellKey)) {
+      events.push({
+        type: 'encounter_found',
+        message: `Encounter at (${chosen.row}, ${chosen.col})! Resolve before continuing.`,
+        row: chosen.row,
+        col: chosen.col,
+      });
+      // Mark as "collected" so we don't re-trigger if player returns later
+      collectedCells.add(cellKey);
+      curRow = chosen.row;
+      curCol = chosen.col;
+      return { path, events, pausedAtEncounter: true, remainingSteps: remaining };
+    }
+
+    curRow = chosen.row;
+    curCol = chosen.col;
+  }
+
+  events.push({ type: 'completed', message: `Moved ${steps} space${steps !== 1 ? 's' : ''}.` });
+  return { path, events, pausedAtEncounter: false, remainingSteps: 0 };
 };

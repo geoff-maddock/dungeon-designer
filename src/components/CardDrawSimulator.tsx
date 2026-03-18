@@ -1,273 +1,291 @@
-import React, { useState, useEffect } from 'react';
-import { CardValue, CardDraw, Board, ActionShape, PlacedShape, CellType } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { CardDraw, Board, TurnRecord, TurnEvent, MovementStep } from '../types';
 import {
-  findValidPlacement,
-  rotateShape,
-  flipShapeHorizontal, // Add this
-  flipShapeVertical,   // Add this
   createStandardDeck,
-  shuffleDeck
+  shuffleDeck,
+  getCardMoveCount,
+  findEntrance,
+  getValidNeighbors,
+  simulateMovement,
 } from '../utils/gameLogic';
 
 interface CardDrawSimulatorProps {
   board: Board;
-  actionShapes: ActionShape[];
-  onPlaceShape: (startRow: number, startCol: number, shape: number[][], cardValue: CardValue, cardSuit: string) => void;
+  /** Called with each cell in the movement path so the parent can render overlays. */
+  onMovePath: (path: { row: number; col: number }[], card: CardDraw, turnIndex: number) => void;
   onResetDeck: () => void;
+}
+
+/** State held while waiting for the player to resolve an encounter mid-turn. */
+interface PendingEncounter {
+  card: CardDraw;
+  turnIndex: number;
+  pathSoFar: MovementStep[];
+  eventsSoFar: TurnEvent[];
+  currentRow: number;
+  currentCol: number;
+  remainingSteps: number;
+  /** All cells visited across the whole session — shared mutable reference. */
+  visitedCells: Set<string>;
+  collectedCells: Set<string>;
 }
 
 const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
   board,
-  actionShapes,
-  onPlaceShape,
-  onResetDeck
+  onMovePath,
+  onResetDeck,
 }) => {
   const [deckCount, setDeckCount] = useState<number>(1);
   const [drawnCards, setDrawnCards] = useState<CardDraw[]>([]);
-  const [message, setMessage] = useState<string>('');
-  const [placedShapes, setPlacedShapes] = useState<PlacedShape[]>([]);
   const [deck, setDeck] = useState<CardDraw[]>([]);
-  const [uncoveredCells, setUncoveredCells] = useState<number>(0);
+  const [turnHistory, setTurnHistory] = useState<TurnRecord[]>([]);
+  const [pendingEncounter, setPendingEncounter] = useState<PendingEncounter | null>(null);
 
-  useEffect(() => {
-    // Calculate total available cells (excluding walls)
-    const totalCells = board.flat().filter(cell => cell.type !== 'wall').length;
+  /**
+   * Items and encounters collected across all turns this session.
+   * Stored in a ref so it can be mutated inside simulateMovement without
+   * triggering re-renders.
+   */
+  const collectedCellsRef = useRef<Set<string>>(new Set());
+  /** All cells visited across every turn — prevents any cross-turn backtracking. */
+  const globalVisitedRef = useRef<Set<string>>(new Set());
+  /**
+   * All visited cells in visit order across all turns. Used by findResumePosition
+   * to locate the most-recently-visited cell that still has open neighbours,
+   * so a dead end on one draw never permanently blocks future draws.
+   */
+  const pathOrderRef = useRef<{ row: number; col: number }[]>([]);
+  /** Incremented once per rank-card draw to give each turn a unique index. */
+  const turnIndexRef = useRef<number>(-1);
 
-    // Calculate covered cells
-    const coveredCells = new Set<string>();
-    placedShapes.forEach(shape => {
-      for (let r = 0; r < shape.shape.length; r++) {
-        for (let c = 0; c < shape.shape[0].length; c++) {
-          if (shape.shape[r][c] === 1) {
-            coveredCells.add(`${shape.startRow + r},${shape.startCol + c}`);
-          }
-        }
-      }
-    });
-
-    setUncoveredCells(totalCells - coveredCells.size);
-  }, [board, placedShapes]);
-
-  // Initialize and shuffle deck when deckCount changes
+  // Initialize / reshuffle deck when deckCount changes.
   useEffect(() => {
     initializeDeck();
   }, [deckCount]);
 
   const initializeDeck = () => {
-    // Create a new deck with the specified count
     let newDeck: CardDraw[] = [];
-
-    // Add the specified number of standard decks
     for (let i = 0; i < deckCount; i++) {
-      const standardDeck = createStandardDeck();
-      newDeck = [...newDeck, ...standardDeck];
+      newDeck = [...newDeck, ...createStandardDeck()];
     }
-
-    // Shuffle the deck
-    newDeck = shuffleDeck(newDeck);
-
-    setDeck(newDeck);
-  };
-
-  const drawCard = () => {
-    if (deck.length === 0) {
-      setMessage("Deck is empty! Reset to continue drawing.");
-      return;
-    }
-
-    // Take the top card from the deck
-    const newCard = deck[0];
-
-    // Remove the card from the deck
-    const newDeck = [...deck.slice(1)];
-    setDeck(newDeck);
-
-    setDrawnCards(prev => [...prev, newCard]);
-
-    // Try to place the shape based on the card value
-    tryPlaceShape(newCard);
-  };
-
-  const handleResetDeck = () => {
-    setDrawnCards([]);
-    setMessage('Deck has been reset. All placed shapes have been cleared.');
-    setPlacedShapes([]);
-    initializeDeck(); // Re-initialize the deck
-    onResetDeck();    // Call the parent's reset function
+    setDeck(shuffleDeck(newDeck));
   };
 
   const handleDeckCountChange = (newCount: number) => {
-    if (newCount >= 1 && newCount <= 3) { // Limit to 1-3 decks
-      setDeckCount(newCount);
-    }
+    if (newCount >= 1 && newCount <= 3) setDeckCount(newCount);
   };
 
-  const tryPlaceShape = (card: CardDraw) => {
-    // Face cards trigger encounter
-    if (['J', 'Q', 'K'].includes(card.value)) {
-      setMessage(`Drew ${card.value} of ${card.suit} - Automatic encounter!`);
+  /**
+   * Walk the full path history in reverse and return the most recently visited
+   * cell that still has at least one valid unvisited neighbour.
+   * Returns null only when every reachable cell has been explored.
+   */
+  const findResumePosition = (): { row: number; col: number } | null => {
+    for (let i = pathOrderRef.current.length - 1; i >= 0; i--) {
+      const { row, col } = pathOrderRef.current[i];
+      if (getValidNeighbors(board, row, col, globalVisitedRef.current).length > 0) {
+        return { row, col };
+      }
+    }
+    return null;
+  };
+
+  // -------------------------------------------------------------------------
+  // Core draw logic
+  // -------------------------------------------------------------------------
+
+  const drawCard = () => {
+    if (pendingEncounter) return; // must resolve encounter first
+    if (deck.length === 0) return;
+
+    const [newCard, ...rest] = deck;
+    setDeck(rest);
+    setDrawnCards(prev => [...prev, newCard]);
+
+    const moveCount = getCardMoveCount(newCard.value);
+
+    if (moveCount === null) {
+      // Face card — automatic encounter, no movement
+      const record: TurnRecord = {
+        card: newCard,
+        stepsAllowed: 0,
+        path: [],
+        events: [{
+          type: 'face_card_encounter',
+          message: `Drew ${newCard.value} of ${newCard.suit} — Automatic encounter!`,
+        }],
+      };
+      setTurnHistory(prev => [record, ...prev]);
       return;
     }
 
-    // Find shapes that match this card value
-    const matchingShapes = actionShapes.filter(shape =>
-      shape.cardValues.includes(card.value)
-    );
+    // First rank card: start from the entrance (which counts as space 1).
+    // All subsequent draws: find the most recently visited cell in path history
+    // that still has valid unvisited neighbours.  This lets the player resume
+    // anywhere on their trail, so a dead end never permanently blocks progress.
+    const isFirstDraw = pathOrderRef.current.length === 0;
+    let startRow: number;
+    let startCol: number;
+    let pathPrefix: MovementStep[];
+    let stepsToMove: number;
 
-    if (matchingShapes.length === 0) {
-      setMessage(`No shapes available for card value ${card.value}`);
-      return;
-    }
-
-    // Try each shape with different orientations
-    for (const shapeObj of matchingShapes) {
-      let shape = shapeObj.shape;
-      let placement: { row: number, col: number } | null = null;
-      let transformations: string[] = [];
-
-      // Original orientation
-      placement = findValidPlacement(board, shape, placedShapes);
-      if (placement) {
-        transformations.push("original");
-      }
-
-      // Try all possible orientations (4 rotations × 2 flips)
-      // First, try rotations of the original shape
-      if (!placement) {
-        // Rotate 90°
-        shape = rotateShape(shape);
-        placement = findValidPlacement(board, shape, placedShapes);
-        if (placement) transformations.push("rotated 90°");
-      }
-
-      if (!placement) {
-        // Rotate 180° (90° twice)
-        shape = rotateShape(shape);
-        placement = findValidPlacement(board, shape, placedShapes);
-        if (placement) transformations.push("rotated 180°");
-      }
-
-      if (!placement) {
-        // Rotate 270° (90° three times)
-        shape = rotateShape(shape);
-        placement = findValidPlacement(board, shape, placedShapes);
-        if (placement) transformations.push("rotated 270°");
-      }
-
-      // Now try the horizontal flip
-      if (!placement) {
-        // Reset to original shape and flip horizontally
-        shape = flipShapeHorizontal(shapeObj.shape);
-        placement = findValidPlacement(board, shape, placedShapes);
-        if (placement) transformations.push("flipped horizontally");
-      }
-
-      if (!placement) {
-        // Rotate flipped shape 90°
-        shape = rotateShape(shape);
-        placement = findValidPlacement(board, shape, placedShapes);
-        if (placement) transformations.push("flipped horizontally, rotated 90°");
-      }
-
-      if (!placement) {
-        // Rotate flipped shape 180°
-        shape = rotateShape(shape);
-        placement = findValidPlacement(board, shape, placedShapes);
-        if (placement) transformations.push("flipped horizontally, rotated 180°");
-      }
-
-      if (!placement) {
-        // Rotate flipped shape 270°
-        shape = rotateShape(shape);
-        placement = findValidPlacement(board, shape, placedShapes);
-        if (placement) transformations.push("flipped horizontally, rotated 270°");
-      }
-
-      // Finally, try the vertical flip (which is different from horizontal flip + 180° rotation)
-      if (!placement) {
-        // Reset to original shape and flip vertically
-        shape = flipShapeVertical(shapeObj.shape);
-        placement = findValidPlacement(board, shape, placedShapes);
-        if (placement) transformations.push("flipped vertically");
-      }
-
-      if (placement) {
-        // Process cell actions for each covered cell
-        const actionsMessage = resolveCellActions(board, shape, placement.row, placement.col);
-
-        setMessage(`Placed shape for ${card.value} of ${card.suit} (${transformations[0]}). ${actionsMessage}`);
-
-        // Record the placed shape
-        const newPlacedShape: PlacedShape = {
-          shape,
-          startRow: placement.row,
-          startCol: placement.col,
-          cardValue: card.value,
-          cardSuit: card.suit
-        };
-
-        setPlacedShapes(prev => [...prev, newPlacedShape]);
-
-        // Update the board
-        onPlaceShape(placement.row, placement.col, shape, card.value, card.suit);
-
-        // Mark this card as placed
-        setDrawnCards(prev =>
-          prev.map((c, i) =>
-            i === prev.length - 1 ? { ...c, isPlaced: true } : c
-          )
-        );
+    if (isFirstDraw) {
+      const entrance = findEntrance(board);
+      if (!entrance) return;
+      startRow = entrance.row;
+      startCol = entrance.col;
+      globalVisitedRef.current.add(`${startRow},${startCol}`);
+      pathOrderRef.current.push({ row: startRow, col: startCol });
+      pathPrefix = [{ row: startRow, col: startCol, cellType: board[startRow][startCol].type }];
+      stepsToMove = moveCount - 1; // entrance already counts as space 1
+    } else {
+      const resumePos = findResumePosition();
+      if (!resumePos) {
+        // Entire reachable area has been fully explored.
+        setTurnHistory(prev => [{
+          card: newCard,
+          stepsAllowed: moveCount,
+          path: [],
+          events: [{ type: 'dead_end', message: 'No valid moves remaining — the entire reachable area has been explored.' }],
+        }, ...prev]);
         return;
       }
+      startRow = resumePos.row;
+      startCol = resumePos.col;
+      pathPrefix = [];
+      stepsToMove = moveCount;
     }
 
-    setMessage(`Drew ${card.value} of ${card.suit} - No valid placement found even with rotations and flips.`);
-  };
+    const result = simulateMovement(
+      board,
+      startRow,
+      startCol,
+      stepsToMove,
+      globalVisitedRef.current,
+      collectedCellsRef.current
+    );
 
-  // Add this helper function to resolve cell actions
-  const resolveCellActions = (board: Board, shape: number[][], startRow: number, startCol: number): string => {
-    const actions: string[] = [];
-
-    for (let r = 0; r < shape.length; r++) {
-      for (let c = 0; c < shape[0].length; c++) {
-        if (shape[r][c] === 1) {
-          const boardRow = startRow + r;
-          const boardCol = startCol + c;
-          const cell = board[boardRow][boardCol];
-
-          switch (cell.type) {
-            case CellType.Key:
-              actions.push("Picked up a Key");
-              break;
-            case CellType.Lock:
-              actions.push("Unlocked a Lock");
-              break;
-            case CellType.Supplies:
-              actions.push("Collected Supplies");
-              break;
-            case CellType.Mana:
-              actions.push("Gained Mana");
-              break;
-            case CellType.Encounter:
-              actions.push("Resolved an Encounter");
-              break;
-            case CellType.Treasure:
-              actions.push("Found Treasure");
-              break;
-            case CellType.Relic:
-              actions.push("Discovered a Relic");
-              break;
-          }
-        }
-      }
+    // Extend the ordered path history with newly visited cells.
+    for (const step of result.path) {
+      pathOrderRef.current.push({ row: step.row, col: step.col });
     }
 
-    return actions.length > 0 ? `Actions: ${actions.join(', ')}` : '';
+    const fullPath = [...pathPrefix, ...result.path];
+    turnIndexRef.current++;
+    const turnIndex = turnIndexRef.current;
+    onMovePath(fullPath.map(s => ({ row: s.row, col: s.col })), newCard, turnIndex);
+
+    if (result.pausedAtEncounter) {
+      const lastStep = result.path[result.path.length - 1];
+      setPendingEncounter({
+        card: newCard,
+        turnIndex,
+        pathSoFar: fullPath,
+        eventsSoFar: result.events,
+        currentRow: lastStep.row,
+        currentCol: lastStep.col,
+        remainingSteps: result.remainingSteps,
+        visitedCells: globalVisitedRef.current,
+        collectedCells: collectedCellsRef.current,
+      });
+    } else {
+      const record: TurnRecord = {
+        card: newCard,
+        stepsAllowed: moveCount,
+        path: fullPath,
+        events: result.events,
+      };
+      setTurnHistory(prev => [record, ...prev]);
+    }
   };
 
-  const getCardColor = (suit: string) => {
-    return suit === 'hearts' || suit === 'diamonds' ? 'text-red-600' : 'text-black';
+  // -------------------------------------------------------------------------
+  // Encounter resolution
+  // -------------------------------------------------------------------------
+
+  const resolveEncounter = (won: boolean) => {
+    if (!pendingEncounter) return;
+    const pe = pendingEncounter;
+
+    const outcomeEvent: TurnEvent = won
+      ? { type: 'encounter_won', message: 'Encounter won — continuing movement.' }
+      : { type: 'encounter_lost', message: 'Encounter lost — movement ends.' };
+
+    if (!won || pe.remainingSteps === 0) {
+      // Turn ends — encounter cell is already in pathOrderRef from when it was entered.
+      const record: TurnRecord = {
+        card: pe.card,
+        stepsAllowed: getCardMoveCount(pe.card.value) ?? 0,
+        path: pe.pathSoFar,
+        events: [...pe.eventsSoFar, outcomeEvent],
+      };
+      setTurnHistory(prev => [record, ...prev]);
+      setPendingEncounter(null);
+      return;
+    }
+
+    // Won — resume movement from encounter cell
+    const result = simulateMovement(
+      board,
+      pe.currentRow,
+      pe.currentCol,
+      pe.remainingSteps,
+      pe.visitedCells,
+      pe.collectedCells
+    );
+
+    // Extend path history with cells visited while continuing after the encounter.
+    for (const step of result.path) {
+      pathOrderRef.current.push({ row: step.row, col: step.col });
+    }
+
+    const extendedPath = [...pe.pathSoFar, ...result.path];
+    onMovePath(result.path.map(s => ({ row: s.row, col: s.col })), pe.card, pe.turnIndex);
+
+    if (result.pausedAtEncounter) {
+      const lastStep = result.path[result.path.length - 1];
+      setPendingEncounter({
+        ...pe,
+        pathSoFar: extendedPath,
+        eventsSoFar: [...pe.eventsSoFar, outcomeEvent, ...result.events],
+        currentRow: lastStep.row,
+        currentCol: lastStep.col,
+        remainingSteps: result.remainingSteps,
+      });
+    } else {
+      const record: TurnRecord = {
+        card: pe.card,
+        stepsAllowed: getCardMoveCount(pe.card.value) ?? 0,
+        path: extendedPath,
+        events: [...pe.eventsSoFar, outcomeEvent, ...result.events],
+      };
+      setTurnHistory(prev => [record, ...prev]);
+      setPendingEncounter(null);
+    }
   };
+
+  // -------------------------------------------------------------------------
+  // Reset
+  // -------------------------------------------------------------------------
+
+  const handleResetDeck = () => {
+    setDrawnCards([]);
+    setTurnHistory([]);
+    setPendingEncounter(null);
+    collectedCellsRef.current = new Set();
+    globalVisitedRef.current = new Set();
+    pathOrderRef.current = [];
+    turnIndexRef.current = -1;
+    initializeDeck();
+    onResetDeck();
+  };
+
+  // -------------------------------------------------------------------------
+  // Helpers
+  // -------------------------------------------------------------------------
+
+  const getCardColor = (suit: string) =>
+    suit === 'hearts' || suit === 'diamonds' ? 'text-red-600' : 'text-gray-900';
 
   const getSuitSymbol = (suit: string) => {
     switch (suit) {
@@ -279,72 +297,125 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
     }
   };
 
-  return (
-    <div className="bg-white rounded-lg shadow-md p-4">
-      <h2 className="text-lg font-semibold mb-3">Card Draw Simulator</h2>
+  const eventColor = (type: TurnEvent['type']) => {
+    switch (type) {
+      case 'face_card_encounter': return 'text-red-700 font-semibold';
+      case 'encounter_found':     return 'text-orange-600 font-semibold';
+      case 'encounter_won':       return 'text-green-600';
+      case 'encounter_lost':      return 'text-red-600';
+      case 'item_collected':      return 'text-blue-600';
+      case 'dead_end':            return 'text-gray-500 italic';
+      case 'completed':           return 'text-gray-500 italic';
+      default:                    return 'text-gray-700';
+    }
+  };
 
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex items-center">
-          <span className="mr-2">Decks:</span>
-          <div className="flex border rounded">
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
+
+  return (
+    <div className="space-y-4">
+
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1">
+          <span className="text-sm">Decks:</span>
+          <div className="flex border rounded overflow-hidden">
             <button
               onClick={() => handleDeckCountChange(deckCount - 1)}
               disabled={deckCount <= 1}
-              className="px-2 py-1 bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
-            >
-              -
-            </button>
-            <span className="px-3 py-1">{deckCount}</span>
+              className="px-2 py-1 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 text-sm"
+            >-</button>
+            <span className="px-3 py-1 text-sm">{deckCount}</span>
             <button
               onClick={() => handleDeckCountChange(deckCount + 1)}
               disabled={deckCount >= 3}
-              className="px-2 py-1 bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
-            >
-              +
-            </button>
+              className="px-2 py-1 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 text-sm"
+            >+</button>
           </div>
         </div>
-        <div className="text-sm">
-          <span className="font-medium">Uncovered Cells: </span>
-          <span className="text-indigo-700 font-bold">{uncoveredCells}</span>
-        </div>
-      </div>
 
-      <div className="mb-4 flex gap-2">
         <button
           onClick={drawCard}
-          disabled={deck.length === 0}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded disabled:bg-gray-400"
+          disabled={deck.length === 0 || !!pendingEncounter}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded text-sm disabled:opacity-40"
         >
           Draw Card ({deck.length})
         </button>
+
         <button
           onClick={handleResetDeck}
-          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded flex items-center"
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded text-sm"
         >
-          Reset Deck
+          Reset
         </button>
       </div>
 
-      {message && (
-        <div className="mb-4 p-2 bg-gray-100 rounded">
-          {message}
+      {/* Encounter resolution prompt */}
+      {pendingEncounter && (
+        <div className="border-2 border-orange-500 rounded p-3 bg-orange-50">
+          <p className="font-semibold text-orange-800 mb-2">
+            ⚔ Encounter! Resolve it, then record the outcome:
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => resolveEncounter(true)}
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded text-sm"
+            >
+              Won — keep moving ({pendingEncounter.remainingSteps} step{pendingEncounter.remainingSteps !== 1 ? 's' : ''} left)
+            </button>
+            <button
+              onClick={() => resolveEncounter(false)}
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded text-sm"
+            >
+              Lost — end turn
+            </button>
+          </div>
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        {drawnCards.map((card, index) => (
-          <div
-            key={index}
-            className={`w-12 h-16 border rounded flex items-center justify-center ${card.isPlaced ? 'opacity-25' : ''} ${getCardColor(card.suit)}`}
-          >
-            <div className="text-center">
-              <div>{card.value}</div>
-              <div>{getSuitSymbol(card.suit)}</div>
+      {/* Recently drawn cards */}
+      {drawnCards.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {[...drawnCards].reverse().slice(0, 13).map((card, index) => (
+            <div
+              key={index}
+              className={`w-10 h-14 border rounded flex items-center justify-center text-xs ${getCardColor(card.suit)}`}
+            >
+              <div className="text-center leading-tight">
+                <div className="font-bold">{card.value}</div>
+                <div>{getSuitSymbol(card.suit)}</div>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
+
+      {/* Turn history */}
+      {turnHistory.length > 0 && (
+        <div className="space-y-2 max-h-72 overflow-y-auto">
+          {turnHistory.map((turn, i) => (
+            <div key={i} className="border rounded p-2 text-sm">
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`font-bold ${getCardColor(turn.card.suit)}`}>
+                  {turn.card.value}{getSuitSymbol(turn.card.suit)}
+                </span>
+                {turn.stepsAllowed > 0 && (
+                  <span className="text-gray-500 text-xs">
+                    {turn.path.length} / {turn.stepsAllowed} space{turn.stepsAllowed !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+              <ul className="space-y-0.5">
+                {turn.events.map((ev, j) => (
+                  <li key={j} className={`text-xs ${eventColor(ev.type)}`}>{ev.message}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
