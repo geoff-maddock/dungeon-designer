@@ -45,7 +45,7 @@ export function generateRandomCharacter(): CharacterState {
         name,
         body: DEFAULT_CHARACTER.body.map(loc => ({
             ...loc,
-            wounds: 0,
+            hits: 0,
             armor: 0,
         })),
         attributes: { brawn, agility, mind, spirit },
@@ -64,6 +64,7 @@ export function generateRandomCharacter(): CharacterState {
             purple: rand(0, 2),
         },
         scoring: { discovery: 0, champion: 0, arcana: 0, fortune: 0 },
+        wounds: 0,
         classes: DEFAULT_CHARACTER.classes.map(cls => ({ ...cls, level: 0 })),
     };
 }

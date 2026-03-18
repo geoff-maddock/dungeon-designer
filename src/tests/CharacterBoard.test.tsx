@@ -270,7 +270,7 @@ describe('generateRandomCharacter', () => {
         const { body } = generateRandomCharacter();
         expect(body).toHaveLength(6);
         body.forEach(loc => {
-            expect(loc.wounds).toBe(0);
+            expect(loc.hits).toBe(0);
             expect(loc.armor).toBe(0);
         });
     });

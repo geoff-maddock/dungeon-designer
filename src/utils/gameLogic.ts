@@ -339,11 +339,11 @@ export interface PartialMoveResult {
   path: MovementStep[];
   events: TurnEvent[];
   /**
-   * Set when movement pauses mid-turn at an encounter cell.
-   * Contains remaining steps the player still has after resolving (or losing)
-   * the encounter.
+   * Set when movement pauses mid-turn at an encounter or trap cell.
+   * Contains remaining steps the player still has after resolving.
    */
   pausedAtEncounter: boolean;
+  pausedAtTrap: boolean;
   remainingSteps: number;
 }
 
@@ -355,6 +355,7 @@ export interface PartialMoveResult {
  *   - The player runs out of steps
  *   - There are no valid neighbouring cells (dead end — no backtracking)
  *   - An un-collected Encounter cell is entered (pause for resolution)
+ *   - An un-collected Trap cell is entered (pause for resolution)
  *
  * @param board          Current board state
  * @param startRow       Row of the starting cell (entrance or resume position)
@@ -362,6 +363,7 @@ export interface PartialMoveResult {
  * @param steps          Number of spaces remaining to move
  * @param visitedThisTurn Cells already visited this turn (updated in place)
  * @param collectedCells  Cells whose items have already been picked up (by key "r,c")
+ * @param cardNumericValue Numeric value of the drawn card (for trap/encounter events)
  */
 export const simulateMovement = (
   board: Board,
@@ -369,7 +371,8 @@ export const simulateMovement = (
   startCol: number,
   steps: number,
   visitedThisTurn: Set<string>,
-  collectedCells: Set<string>
+  collectedCells: Set<string>,
+  cardNumericValue: number = 0
 ): PartialMoveResult => {
   const path: MovementStep[] = [];
   const events: TurnEvent[] = [];
@@ -383,7 +386,7 @@ export const simulateMovement = (
 
     if (neighbors.length === 0) {
       events.push({ type: 'dead_end', message: 'Dead end — movement ends.', row: curRow, col: curCol });
-      return { path, events, pausedAtEncounter: false, remainingSteps: 0 };
+      return { path, events, pausedAtEncounter: false, pausedAtTrap: false, remainingSteps: 0 };
     }
 
     // Choose next cell: prefer untraversed cells, then random among all options
@@ -394,16 +397,45 @@ export const simulateMovement = (
 
     visitedThisTurn.add(`${chosen.row},${chosen.col}`);
     const cellType = board[chosen.row][chosen.col].type;
+    const colorReq = board[chosen.row][chosen.col].colorRequirement;
     path.push({ row: chosen.row, col: chosen.col, cellType });
     remaining--;
 
-    // Collect items
     const cellKey = `${chosen.row},${chosen.col}`;
+
+    // Collect items
     if (ITEM_CELL_TYPES.has(cellType) && !collectedCells.has(cellKey)) {
       collectedCells.add(cellKey);
       events.push({
         type: 'item_collected',
         message: `Collected ${cellType} at (${chosen.row}, ${chosen.col}).`,
+        row: chosen.row,
+        col: chosen.col,
+        colorRequirement: colorReq,
+      });
+    }
+
+    // Trap — pause for resolution
+    if (cellType === CellType.Trap && !collectedCells.has(cellKey)) {
+      events.push({
+        type: 'trap_hit',
+        message: `Trap at (${chosen.row}, ${chosen.col})! Card value ${cardNumericValue} vs your agility.`,
+        row: chosen.row,
+        col: chosen.col,
+        cardNumericValue,
+      });
+      collectedCells.add(cellKey);
+      curRow = chosen.row;
+      curCol = chosen.col;
+      return { path, events, pausedAtEncounter: false, pausedAtTrap: true, remainingSteps: remaining };
+    }
+
+    // Goal reached
+    if (cellType === CellType.Goal && !collectedCells.has(cellKey)) {
+      collectedCells.add(cellKey);
+      events.push({
+        type: 'goal_reached',
+        message: `Goal reached at (${chosen.row}, ${chosen.col})! +5 XP, +5 Discovery.`,
         row: chosen.row,
         col: chosen.col,
       });
@@ -416,12 +448,13 @@ export const simulateMovement = (
         message: `Encounter at (${chosen.row}, ${chosen.col})! Resolve before continuing.`,
         row: chosen.row,
         col: chosen.col,
+        cardNumericValue,
       });
       // Mark as "collected" so we don't re-trigger if player returns later
       collectedCells.add(cellKey);
       curRow = chosen.row;
       curCol = chosen.col;
-      return { path, events, pausedAtEncounter: true, remainingSteps: remaining };
+      return { path, events, pausedAtEncounter: true, pausedAtTrap: false, remainingSteps: remaining };
     }
 
     curRow = chosen.row;
@@ -429,5 +462,5 @@ export const simulateMovement = (
   }
 
   events.push({ type: 'completed', message: `Moved ${steps} space${steps !== 1 ? 's' : ''}.` });
-  return { path, events, pausedAtEncounter: false, remainingSteps: 0 };
+  return { path, events, pausedAtEncounter: false, pausedAtTrap: false, remainingSteps: 0 };
 };

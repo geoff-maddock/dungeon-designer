@@ -112,6 +112,9 @@ export type TurnEventType =
   | 'encounter_found'
   | 'encounter_won'
   | 'encounter_lost'
+  | 'trap_hit'
+  | 'trap_evaded'
+  | 'goal_reached'
   | 'dead_end'
   | 'completed'
   | 'face_card_encounter';
@@ -121,6 +124,16 @@ export interface TurnEvent {
   message: string;
   row?: number;
   col?: number;
+  /** The numeric value of the card used for this turn (used for trap/encounter resolution). */
+  cardNumericValue?: number;
+  /** For energy cells, which color energy was gained. */
+  colorRequirement?: ColorRequirement;
+  /** For encounter events, the XP reward for a win. */
+  encounterXp?: number;
+  /** For encounter events, the gold reward for a win. */
+  encounterGold?: number;
+  /** Number of wounds taken (trap or encounter failure). */
+  woundsDealt?: number;
 }
 
 /** Full record of one card-draw turn. */
@@ -138,9 +151,9 @@ export interface TurnRecord {
 export interface BodyLocation {
   name: 'Head' | 'Torso' | 'Left Arm' | 'Right Arm' | 'Left Leg' | 'Right Leg';
   woundSlots: number;
-  wounds: number;
-  armorSlots: number;
-  armor: number;
+  hits: number;       // circles filled on this body part (armored or not)
+  armorSlots: number; // kept for compat; effective cap is woundSlots
+  armor: number;      // how many circles are outlined in blue (armored)
 }
 
 export interface CharacterAttributes {
@@ -189,22 +202,24 @@ export interface CharacterState {
   energies: ColorEnergies;
   scoring: Record<ScoringCategory, number>;
   classes: ClassProgress[];
+  wounds: number;    // global wound counter (0-10), shown as hearts
 }
 
 export const DEFAULT_CHARACTER: CharacterState = {
   name: 'Hero',
   body: [
-    { name: 'Head', woundSlots: 2, wounds: 0, armorSlots: 2, armor: 0 },
-    { name: 'Torso', woundSlots: 4, wounds: 0, armorSlots: 4, armor: 0 },
-    { name: 'Left Arm', woundSlots: 2, wounds: 0, armorSlots: 2, armor: 0 },
-    { name: 'Right Arm', woundSlots: 2, wounds: 0, armorSlots: 2, armor: 0 },
-    { name: 'Left Leg', woundSlots: 2, wounds: 0, armorSlots: 2, armor: 0 },
-    { name: 'Right Leg', woundSlots: 2, wounds: 0, armorSlots: 2, armor: 0 },
+    { name: 'Head', woundSlots: 2, hits: 0, armorSlots: 2, armor: 0 },
+    { name: 'Torso', woundSlots: 4, hits: 0, armorSlots: 4, armor: 0 },
+    { name: 'Left Arm', woundSlots: 2, hits: 0, armorSlots: 2, armor: 0 },
+    { name: 'Right Arm', woundSlots: 2, hits: 0, armorSlots: 2, armor: 0 },
+    { name: 'Left Leg', woundSlots: 2, hits: 0, armorSlots: 2, armor: 0 },
+    { name: 'Right Leg', woundSlots: 2, hits: 0, armorSlots: 2, armor: 0 },
   ],
   attributes: { brawn: 3, agility: 3, mind: 3, spirit: 3 },
   resources: { xp: 0, gold: 0, supplies: 0, mana: 0 },
   energies: { red: 0, orange: 0, yellow: 0, green: 0, blue: 0, purple: 0 },
   scoring: { discovery: 0, champion: 0, arcana: 0, fortune: 0 },
+  wounds: 0,
   classes: [
     { className: 'Alchemist', level: 0 },
     { className: 'Bard', level: 0 },
