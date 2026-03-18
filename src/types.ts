@@ -229,3 +229,42 @@ export const DEFAULT_CHARACTER: CharacterState = {
     { className: 'Ranger', level: 0 },
   ],
 };
+
+// ---------------------------------------------------------------------------
+// City Board types
+// ---------------------------------------------------------------------------
+
+export interface CityBuildingState {
+  rank: CardValue | 'wild';
+  visits: number;
+  visitCap: number;         // 0 = no cap (Graveyard)
+  depositLevel?: 0 | 1 | 2; // Bank only: 0=none, 1=small (5g/round), 2=large (10g/round)
+  scryTokens?: number;      // Scholar's Archive only
+  soulsGained?: number;     // Graveyard only — total souls ever accumulated (for milestones)
+  soulsAvailable?: number;  // Graveyard only — current spendable pool
+}
+
+export interface CityBoardState {
+  buildings: CityBuildingState[];   // 14 entries (13 rank-based + Graveyard)
+  globalDepositCount: number;       // shared across all players; default cap is 3
+}
+
+export const DEFAULT_CITY_BOARD: CityBoardState = {
+  globalDepositCount: 0,
+  buildings: [
+    { rank: '2', visits: 0, visitCap: 4 },              // Stables
+    { rank: '3', visits: 0, visitCap: 4 },              // Tavern
+    { rank: '4', visits: 0, visitCap: 5 },              // Market Square
+    { rank: '5', visits: 0, visitCap: 6 },              // Herbalist
+    { rank: '6', visits: 0, visitCap: 4 },              // Blacksmith
+    { rank: '7', visits: 0, visitCap: 5 },              // Mage's Workshop
+    { rank: '8', visits: 0, visitCap: 4 },              // Guild Hall
+    { rank: '9', visits: 0, visitCap: 4 },              // Scholar's Archive
+    { rank: '10', visits: 0, visitCap: 6, depositLevel: 0 }, // The Bank
+    { rank: 'J', visits: 0, visitCap: 4 },              // Thieves' Guild
+    { rank: 'Q', visits: 0, visitCap: 4 },              // Temple of the Fading Light
+    { rank: 'K', visits: 0, visitCap: 4 },              // Royal Keep
+    { rank: 'A', visits: 0, visitCap: 5, scryTokens: 0 }, // Arcane Academy (scryTokens from Archive)
+    { rank: 'wild', visits: 0, visitCap: 0, soulsGained: 0, soulsAvailable: 0 }, // Graveyard
+  ],
+};

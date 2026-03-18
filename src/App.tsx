@@ -16,7 +16,7 @@ import TowerBoard from './components/TowerBoard';
 import ForestBoard from './components/ForestBoard';
 import CityBoard from './components/CityBoard';
 import CharacterBoard from './components/CharacterBoard';
-import { CharacterState, DEFAULT_CHARACTER } from './types';
+import { CharacterState, DEFAULT_CHARACTER, CityBoardState, DEFAULT_CITY_BOARD } from './types';
 
 const DEFAULT_RANDOM_BOARD_SETTINGS: { [key in CellType | ColorRequirement]?: number } = {
   [CellType.Key]: 3,
@@ -48,6 +48,18 @@ const DEFAULT_MAZE_SETTINGS: MazeSettings = {
 
 function App() {
   const [currentPage, setCurrentPage] = useState<'dungeon' | 'tower' | 'forest' | 'city' | 'character'>('dungeon');
+
+  const [cityState, setCityState] = useState<CityBoardState>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('cityBoardState') || 'null') ?? DEFAULT_CITY_BOARD;
+    } catch {
+      return DEFAULT_CITY_BOARD;
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('cityBoardState', JSON.stringify(cityState));
+  }, [cityState]);
 
   const [character, setCharacter] = useState<CharacterState>(() => {
     try {
@@ -1125,7 +1137,16 @@ function App() {
 
         {currentPage === 'tower' && <div className="flex-1 overflow-auto"><TowerBoard /></div>}
         {currentPage === 'forest' && <div className="flex-1 overflow-auto"><ForestBoard /></div>}
-        {currentPage === 'city' && <div className="flex-1 overflow-auto"><CityBoard /></div>}
+        {currentPage === 'city' && (
+          <div className="flex-1 overflow-auto flex flex-col">
+            <CityBoard
+              cityState={cityState}
+              character={character}
+              onCityChange={setCityState}
+              onCharacterChange={setCharacter}
+            />
+          </div>
+        )}
         {currentPage === 'character' && <div className="flex-1 overflow-auto"><CharacterBoard character={character} onChange={setCharacter} /></div>}
 
       </div>
