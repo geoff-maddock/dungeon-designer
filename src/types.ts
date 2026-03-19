@@ -231,6 +231,40 @@ export const DEFAULT_CHARACTER: CharacterState = {
 };
 
 // ---------------------------------------------------------------------------
+// Shared deck + dungeon session types
+// ---------------------------------------------------------------------------
+
+export interface SharedDeckState {
+  deck: CardDraw[];
+  drawnCards: CardDraw[];
+  deckCount: number;
+}
+
+export const DEFAULT_SHARED_DECK: SharedDeckState = {
+  deck: [],        // populated at runtime via createStandardDeck() + shuffleDeck()
+  drawnCards: [],
+  deckCount: 1,
+};
+
+/** Serialisable snapshot of per-session dungeon traversal state.
+ *  Stored in localStorage so navigating away and back preserves progress. */
+export interface DungeonSessionState {
+  turnHistory: TurnRecord[];
+  globalVisited: string[];          // Set<"row,col"> serialised as array
+  collectedCells: string[];
+  pathOrder: { row: number; col: number }[];
+  turnIndex: number;
+}
+
+export const DEFAULT_DUNGEON_SESSION: DungeonSessionState = {
+  turnHistory: [],
+  globalVisited: [],
+  collectedCells: [],
+  pathOrder: [],
+  turnIndex: -1,
+};
+
+// ---------------------------------------------------------------------------
 // City Board types
 // ---------------------------------------------------------------------------
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CityBoardState, CityBuildingState, DEFAULT_CITY_BOARD, CharacterState, CardValue } from '../types';
+import { CityBoardState, CityBuildingState, DEFAULT_CITY_BOARD, CharacterState, CardValue, CardDraw } from '../types';
 import {
   CITY_BUILDINGS,
   CityBuildingConfig,
@@ -8,6 +8,7 @@ import {
   soulsForRank,
   SOUL_SPEND_TABLE,
 } from '../utils/cityLogic';
+import DeckPanel, { getCardColor, getSuitSymbol } from './DeckPanel';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -18,6 +19,51 @@ interface CityBoardProps {
   character: CharacterState;
   onCityChange: (updated: CityBoardState) => void;
   onCharacterChange: (updated: CharacterState) => void;
+  // Shared deck
+  deck: CardDraw[];
+  drawnCards: CardDraw[];
+  deckCount: number;
+  onDrawCard: () => CardDraw | null;
+  onDeckCountChange: (n: number) => void;
+  onResetDeck: () => void;
+}
+
+// ---------------------------------------------------------------------------
+// City deck guidance panel
+// ---------------------------------------------------------------------------
+
+function CityDeckGuidance({ lastCard }: { lastCard: CardDraw | undefined }) {
+  if (!lastCard) return null;
+  const isFace = ['J', 'Q', 'K'].includes(lastCard.value);
+  const isDiamond = lastCard.suit === 'diamonds';
+  const suitSymbol = getSuitSymbol(lastCard.suit);
+  const cardLabel = `${lastCard.value}${suitSymbol}`;
+  const colorClass = getCardColor(lastCard.suit);
+
+  if (!isDiamond) {
+    return (
+      <div className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded p-2">
+        <span className={`font-bold ${colorClass}`}>{cardLabel}</span> drawn — no City action for {lastCard.suit} cards.
+      </div>
+    );
+  }
+
+  const matchingBuilding = CITY_BUILDINGS.find(b => b.cardValue === lastCard.value);
+  const buildingName = matchingBuilding?.name ?? 'unknown';
+
+  return (
+    <div className="text-sm bg-amber-50 border border-amber-300 rounded p-2 space-y-0.5">
+      <div>
+        <span className={`font-bold ${colorClass}`}>{cardLabel}</span> drawn —{' '}
+        {matchingBuilding
+          ? <span>visit <strong>{buildingName}</strong> or redirect to Graveyard if exhausted.</span>
+          : <span>visit Graveyard (wild ♦).</span>}
+      </div>
+      {isFace && (
+        <div className="text-amber-700 text-xs">Noble ability: check the {buildingName} milestone for special rewards.</div>
+      )}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -469,8 +515,15 @@ function DistrictSection({
 export default function CityBoard({
   cityState,
   onCityChange,
+  deck,
+  drawnCards,
+  deckCount,
+  onDrawCard,
+  onDeckCountChange,
+  onResetDeck,
 }: CityBoardProps) {
   const [showHelp, setShowHelp] = useState(false);
+  const lastDrawnCard = drawnCards.length > 0 ? drawnCards[drawnCards.length - 1] : undefined;
 
   const handleBuildingChange = (rank: CardValue | 'wild', updated: CityBuildingState) => {
     onCityChange({
@@ -546,6 +599,20 @@ export default function CityBoard({
 
       {/* Board */}
       <main className="flex-1 overflow-auto p-4 bg-amber-50 flex flex-col gap-4">
+        {/* Deck Panel */}
+        <div className="bg-white rounded-lg shadow-md p-4">
+          <DeckPanel
+            deck={deck}
+            drawnCards={drawnCards}
+            deckCount={deckCount}
+            onDraw={onDrawCard}
+            onReset={onResetDeck}
+            onDeckCountChange={onDeckCountChange}
+          >
+            <CityDeckGuidance lastCard={lastDrawnCard} />
+          </DeckPanel>
+        </div>
+
         {districts.map(({ title, icon }) => {
           const buildings = CITY_BUILDINGS.filter(b => b.district === title);
           if (buildings.length === 0) return null;

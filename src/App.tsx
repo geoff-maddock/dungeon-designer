@@ -3,8 +3,9 @@ import { Download, Upload, Save, Trash2, RefreshCw, Grid, Camera, Settings, Chev
 import BoardDesigner from './components/BoardDesigner';
 import ActionShapes from './components/ActionShapes';
 import CardDrawSimulator from './components/CardDrawSimulator';
-import { CellType, ColorRequirement, Board, ActionShape, PlacedShape, MazeSettings, BoardConfig, EncounterCard } from './types';
+import { CellType, ColorRequirement, Board, ActionShape, PlacedShape, MazeSettings, BoardConfig, EncounterCard, SharedDeckState, DungeonSessionState, DEFAULT_DUNGEON_SESSION } from './types';
 import { generateRandomBoard } from './utils/boardGenerator';
+import { createStandardDeck, shuffleDeck } from './utils/gameLogic';
 import { generateMazeBoard, populateMaze, getShortestPath, generateEncounterCards } from './utils/mazeGenerator';
 import { exportBoardAsPNG } from './utils/imageExport';
 import RandomBoardSettings from './components/RandomBoardSettings';
@@ -16,7 +17,7 @@ import TowerBoard from './components/TowerBoard';
 import ForestBoard from './components/ForestBoard';
 import CityBoard from './components/CityBoard';
 import CharacterBoard from './components/CharacterBoard';
-import { CharacterState, DEFAULT_CHARACTER, CityBoardState, DEFAULT_CITY_BOARD } from './types';
+import { CharacterState, DEFAULT_CHARACTER, CityBoardState, DEFAULT_CITY_BOARD, CardDraw } from './types';
 
 const DEFAULT_RANDOM_BOARD_SETTINGS: { [key in CellType | ColorRequirement]?: number } = {
   [CellType.Key]: 3,
@@ -60,6 +61,64 @@ function App() {
   useEffect(() => {
     localStorage.setItem('cityBoardState', JSON.stringify(cityState));
   }, [cityState]);
+
+  // ---------------------------------------------------------------------------
+  // Shared deck state
+  // ---------------------------------------------------------------------------
+  const [sharedDeck, setSharedDeck] = useState<SharedDeckState>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('sharedDeckState') || 'null') as SharedDeckState | null;
+      if (stored && stored.deck && stored.deck.length > 0) return stored;
+    } catch { /* ignore */ }
+    return { deck: shuffleDeck(createStandardDeck()), drawnCards: [], deckCount: 1 };
+  });
+  useEffect(() => {
+    localStorage.setItem('sharedDeckState', JSON.stringify(sharedDeck));
+  }, [sharedDeck]);
+
+  const [dungeonSession, setDungeonSession] = useState<DungeonSessionState>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('dungeonSession') || 'null') ?? DEFAULT_DUNGEON_SESSION;
+    } catch {
+      return DEFAULT_DUNGEON_SESSION;
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem('dungeonSession', JSON.stringify(dungeonSession));
+  }, [dungeonSession]);
+
+  const handleDrawCard = (): CardDraw | null => {
+    let drawn: CardDraw | null = null;
+    setSharedDeck(prev => {
+      if (prev.deck.length === 0) return prev;
+      const [card, ...rest] = prev.deck;
+      drawn = card;
+      return { ...prev, deck: rest, drawnCards: [...prev.drawnCards, card] };
+    });
+    return drawn;
+  };
+
+  const buildFreshDeck = (count: number): CardDraw[] => {
+    let d: CardDraw[] = [];
+    for (let i = 0; i < count; i++) d = [...d, ...createStandardDeck()];
+    return shuffleDeck(d);
+  };
+
+  const handleResetSharedDeck = () => {
+    setSharedDeck(prev => ({ deck: buildFreshDeck(prev.deckCount), drawnCards: [], deckCount: prev.deckCount }));
+  };
+
+  const handleDeckCountChange = (n: number) => {
+    if (n < 1 || n > 3) return;
+    setSharedDeck({ deck: buildFreshDeck(n), drawnCards: [], deckCount: n });
+  };
+
+  const handleResetGame = () => {
+    handleResetSharedDeck();
+    setDungeonSession(DEFAULT_DUNGEON_SESSION);
+    setCharacter(DEFAULT_CHARACTER);
+    setCityState(DEFAULT_CITY_BOARD);
+  };
 
   const [character, setCharacter] = useState<CharacterState>(() => {
     try {
@@ -577,8 +636,14 @@ function App() {
             </button>
           ))}
         </nav>
-        <div className="p-4 border-t border-gray-700 text-xs text-gray-500 text-center">
-          &copy; 2025
+        <div className="p-4 border-t border-gray-700 space-y-2">
+          <button
+            onClick={handleResetGame}
+            className="w-full bg-red-700 hover:bg-red-800 text-white text-xs px-3 py-2 rounded flex items-center justify-center gap-1"
+          >
+            <RefreshCw size={13} /> Reset Game
+          </button>
+          <div className="text-xs text-gray-500 text-center">&copy; 2025</div>
         </div>
       </aside>
 
@@ -1024,12 +1089,19 @@ function App() {
                   {expandedSections.cardDraw && (
                     <div className="px-4 pb-4">
                       <CardDrawSimulator
+                        deck={sharedDeck.deck}
+                        drawnCards={sharedDeck.drawnCards}
+                        deckCount={sharedDeck.deckCount}
+                        onDrawCard={handleDrawCard}
+                        onDeckCountChange={handleDeckCountChange}
+                        onResetDeck={handleResetSharedDeck}
+                        session={dungeonSession}
+                        onSessionChange={setDungeonSession}
                         board={board}
                         character={character}
                         encounterCards={encounterCards}
                         onCharacterChange={setCharacter}
                         onMovePath={handleMovePath}
-                        onResetDeck={handleResetDeck}
                       />
                     </div>
                   )}
@@ -1135,8 +1207,30 @@ function App() {
           </div>
         )}
 
-        {currentPage === 'tower' && <div className="flex-1 overflow-auto"><TowerBoard /></div>}
-        {currentPage === 'forest' && <div className="flex-1 overflow-auto"><ForestBoard /></div>}
+        {currentPage === 'tower' && (
+          <div className="flex-1 overflow-auto">
+            <TowerBoard
+              deck={sharedDeck.deck}
+              drawnCards={sharedDeck.drawnCards}
+              deckCount={sharedDeck.deckCount}
+              onDrawCard={handleDrawCard}
+              onDeckCountChange={handleDeckCountChange}
+              onResetDeck={handleResetSharedDeck}
+            />
+          </div>
+        )}
+        {currentPage === 'forest' && (
+          <div className="flex-1 overflow-auto">
+            <ForestBoard
+              deck={sharedDeck.deck}
+              drawnCards={sharedDeck.drawnCards}
+              deckCount={sharedDeck.deckCount}
+              onDrawCard={handleDrawCard}
+              onDeckCountChange={handleDeckCountChange}
+              onResetDeck={handleResetSharedDeck}
+            />
+          </div>
+        )}
         {currentPage === 'city' && (
           <div className="flex-1 overflow-auto flex flex-col">
             <CityBoard
@@ -1144,10 +1238,29 @@ function App() {
               character={character}
               onCityChange={setCityState}
               onCharacterChange={setCharacter}
+              deck={sharedDeck.deck}
+              drawnCards={sharedDeck.drawnCards}
+              deckCount={sharedDeck.deckCount}
+              onDrawCard={handleDrawCard}
+              onDeckCountChange={handleDeckCountChange}
+              onResetDeck={handleResetSharedDeck}
             />
           </div>
         )}
-        {currentPage === 'character' && <div className="flex-1 overflow-auto"><CharacterBoard character={character} onChange={setCharacter} /></div>}
+        {currentPage === 'character' && (
+          <div className="flex-1 overflow-auto">
+            <CharacterBoard
+              character={character}
+              onChange={setCharacter}
+              deck={sharedDeck.deck}
+              drawnCards={sharedDeck.drawnCards}
+              deckCount={sharedDeck.deckCount}
+              onDrawCard={handleDrawCard}
+              onDeckCountChange={handleDeckCountChange}
+              onResetDeck={handleResetSharedDeck}
+            />
+          </div>
+        )}
 
       </div>
     </div>
