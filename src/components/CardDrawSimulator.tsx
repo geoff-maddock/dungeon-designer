@@ -1,22 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CardDraw, Board, TurnRecord, TurnEvent, MovementStep, CharacterState, EncounterCard, CellType, ColorRequirement } from '../types';
+import { CardDraw, Board, TurnRecord, TurnEvent, MovementStep, CharacterState, EncounterCard, CellType, ColorRequirement, DungeonSessionState, DEFAULT_DUNGEON_SESSION } from '../types';
 import {
-  createStandardDeck,
-  shuffleDeck,
   getCardMoveCount,
   findEntrance,
   getValidNeighbors,
   simulateMovement,
 } from '../utils/gameLogic';
+import DeckPanel from './DeckPanel';
 
 interface CardDrawSimulatorProps {
+  // Shared deck (managed in App.tsx)
+  deck: CardDraw[];
+  drawnCards: CardDraw[];
+  deckCount: number;
+  onDrawCard: () => CardDraw | null;
+  onDeckCountChange: (n: number) => void;
+  onResetDeck: () => void;
+  // Dungeon session persistence
+  session: DungeonSessionState;
+  onSessionChange: (s: DungeonSessionState) => void;
+  // Board-specific
   board: Board;
   character: CharacterState;
   encounterCards: EncounterCard[];
   onCharacterChange: (updated: CharacterState) => void;
   /** Called with each cell in the movement path so the parent can render overlays. */
   onMovePath: (path: { row: number; col: number }[], card: CardDraw, turnIndex: number) => void;
-  onResetDeck: () => void;
 }
 
 /** State held while waiting for the player to resolve an encounter mid-turn. */
@@ -52,17 +61,21 @@ interface PendingTrap {
 }
 
 const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
+  deck,
+  drawnCards,
+  deckCount,
+  onDrawCard,
+  onDeckCountChange,
+  onResetDeck,
+  session,
+  onSessionChange,
   board,
   character,
   encounterCards,
   onCharacterChange,
   onMovePath,
-  onResetDeck,
 }) => {
-  const [deckCount, setDeckCount] = useState<number>(1);
-  const [drawnCards, setDrawnCards] = useState<CardDraw[]>([]);
-  const [deck, setDeck] = useState<CardDraw[]>([]);
-  const [turnHistory, setTurnHistory] = useState<TurnRecord[]>([]);
+  const [turnHistory, setTurnHistory] = useState<TurnRecord[]>(() => session.turnHistory);
   const [pendingEncounter, setPendingEncounter] = useState<PendingEncounter | null>(null);
   const [pendingTrap, setPendingTrap] = useState<PendingTrap | null>(null);
 
@@ -71,34 +84,28 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
    * Stored in a ref so it can be mutated inside simulateMovement without
    * triggering re-renders.
    */
-  const collectedCellsRef = useRef<Set<string>>(new Set());
+  const collectedCellsRef = useRef<Set<string>>(new Set(session.collectedCells));
   /** All cells visited across every turn — prevents any cross-turn backtracking. */
-  const globalVisitedRef = useRef<Set<string>>(new Set());
+  const globalVisitedRef = useRef<Set<string>>(new Set(session.globalVisited));
   /**
    * All visited cells in visit order across all turns. Used by findResumePosition
    * to locate the most-recently-visited cell that still has open neighbours,
    * so a dead end on one draw never permanently blocks future draws.
    */
-  const pathOrderRef = useRef<{ row: number; col: number }[]>([]);
+  const pathOrderRef = useRef<{ row: number; col: number }[]>(session.pathOrder ?? []);
   /** Incremented once per rank-card draw to give each turn a unique index. */
-  const turnIndexRef = useRef<number>(-1);
+  const turnIndexRef = useRef<number>(session.turnIndex ?? -1);
 
-  // Initialize / reshuffle deck when deckCount changes.
+  // Persist session whenever turnHistory changes
   useEffect(() => {
-    initializeDeck();
-  }, [deckCount]);
-
-  const initializeDeck = () => {
-    let newDeck: CardDraw[] = [];
-    for (let i = 0; i < deckCount; i++) {
-      newDeck = [...newDeck, ...createStandardDeck()];
-    }
-    setDeck(shuffleDeck(newDeck));
-  };
-
-  const handleDeckCountChange = (newCount: number) => {
-    if (newCount >= 1 && newCount <= 3) setDeckCount(newCount);
-  };
+    onSessionChange({
+      turnHistory,
+      globalVisited: [...globalVisitedRef.current],
+      collectedCells: [...collectedCellsRef.current],
+      pathOrder: pathOrderRef.current,
+      turnIndex: turnIndexRef.current,
+    });
+  }, [turnHistory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Walk the full path history in reverse and return the most recently visited
@@ -124,9 +131,8 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
     if (pendingTrap) return;      // must resolve trap first
     if (deck.length === 0) return;
 
-    const [newCard, ...rest] = deck;
-    setDeck(rest);
-    setDrawnCards(prev => [...prev, newCard]);
+    const newCard = onDrawCard();
+    if (!newCard) return;
 
     const moveCount = getCardMoveCount(newCard.value);
 
@@ -143,14 +149,11 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
 
       let combatCard: CardDraw | null = null;
       let combatNumericValue = 0;
-      let deckAfterCombat = rest;
-      if (rest.length > 0) {
-        const [drawnCombat, ...remaining] = rest;
-        combatCard = drawnCombat;
-        combatNumericValue = getCardNumericValueHelper(drawnCombat.value);
-        deckAfterCombat = remaining;
-        setDrawnCards(prev => [...prev, drawnCombat]);
-        setDeck(deckAfterCombat);
+      if (deck.length > 1) {
+        combatCard = onDrawCard();
+        if (combatCard) {
+          combatNumericValue = getCardNumericValueHelper(combatCard.value);
+        }
       }
 
       setPendingEncounter({
@@ -600,7 +603,6 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
   // -------------------------------------------------------------------------
 
   const handleResetDeck = () => {
-    setDrawnCards([]);
     setTurnHistory([]);
     setPendingEncounter(null);
     setPendingTrap(null);
@@ -608,7 +610,7 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
     globalVisitedRef.current = new Set();
     pathOrderRef.current = [];
     turnIndexRef.current = -1;
-    initializeDeck();
+    onSessionChange(DEFAULT_DUNGEON_SESSION);
     onResetDeck();
   };
 
@@ -649,113 +651,71 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
   // Render
   // -------------------------------------------------------------------------
 
-  return (
-    <div className="space-y-4">
-
-      {/* Controls */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1">
-          <span className="text-sm">Decks:</span>
-          <div className="flex border rounded overflow-hidden">
-            <button
-              onClick={() => handleDeckCountChange(deckCount - 1)}
-              disabled={deckCount <= 1}
-              className="px-2 py-1 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 text-sm"
-            >-</button>
-            <span className="px-3 py-1 text-sm">{deckCount}</span>
-            <button
-              onClick={() => handleDeckCountChange(deckCount + 1)}
-              disabled={deckCount >= 3}
-              className="px-2 py-1 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 text-sm"
-            >+</button>
+  const encounterPrompt = pendingEncounter && (() => {
+    const ec = pendingEncounter.encounterCard;
+    const attackRoll = pendingEncounter.cardNumericValue + character.attributes.brawn;
+    const strengthValues = ec ? ec.strength.split('/').map(Number) : [];
+    const woundsPreview = strengthValues.filter(s => s > attackRoll).length;
+    const willWin = !ec || woundsPreview === 0;
+    return (
+      <div className="border-2 border-orange-500 rounded p-3 bg-orange-50">
+        <p className="font-semibold text-orange-800 mb-1">⚔ Encounter!</p>
+        {ec && (
+          <div className="text-sm text-orange-700 mb-2 space-y-0.5">
+            <div><span className="font-medium">{ec.monsterName}</span> — STR: {ec.strength}</div>
+            <div>Combat card: {pendingEncounter.cardNumericValue} + Brawn {character.attributes.brawn} = <span className="font-bold">{attackRoll}</span></div>
+            <div>Reward: {ec.xp} XP / {ec.gold} Gold</div>
+            <div className={willWin ? 'text-green-700 font-semibold' : 'text-red-700 font-semibold'}>
+              {willWin
+                ? `✓ Victory — attack ${attackRoll} beats all STR values`
+                : `✗ Defeat — ${woundsPreview} wound${woundsPreview !== 1 ? 's' : ''} (${woundsPreview} STR value${woundsPreview !== 1 ? 's' : ''} exceed attack ${attackRoll})`
+              }
+            </div>
           </div>
-        </div>
-
+        )}
         <button
-          onClick={drawCard}
-          disabled={deck.length === 0 || !!pendingEncounter || !!pendingTrap}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded text-sm disabled:opacity-40"
+          onClick={resolveEncounter}
+          className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-1.5 rounded text-sm"
         >
-          Draw Card ({deck.length})
-        </button>
-
-        <button
-          onClick={handleResetDeck}
-          className="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded text-sm"
-        >
-          Reset
+          Resolve Encounter{pendingEncounter.remainingSteps > 0 && willWin ? ` (${pendingEncounter.remainingSteps} step${pendingEncounter.remainingSteps !== 1 ? 's' : ''} left)` : ''}
         </button>
       </div>
+    );
+  })();
 
-      {/* Trap resolution prompt */}
-      {pendingTrap && (
-        <div className="border-2 border-yellow-600 rounded p-3 bg-yellow-50">
-          <p className="font-semibold text-yellow-800 mb-1">
-            💣 Trap! Card value: {pendingTrap.cardNumericValue} vs your Agility: {character.attributes.agility}
-          </p>
-          <p className="text-sm text-yellow-700 mb-2">
-            {pendingTrap.cardNumericValue > character.attributes.agility
-              ? `Trap triggered — card (${pendingTrap.cardNumericValue}) beats agility (${character.attributes.agility}). You take 1 wound and movement ends.`
-              : `Trap evaded — card (${pendingTrap.cardNumericValue}) ≤ agility (${character.attributes.agility}). You may continue.`}
-          </p>
-          <button
-            onClick={resolveTrap}
-            className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-1.5 rounded text-sm"
-          >
-            Resolve Trap
-          </button>
-        </div>
-      )}
-
-      {/* Encounter resolution prompt */}
-      {pendingEncounter && (() => {
-        const ec = pendingEncounter.encounterCard;
-        const attackRoll = pendingEncounter.cardNumericValue + character.attributes.brawn;
-        const strengthValues = ec ? ec.strength.split('/').map(Number) : [];
-        const woundsPreview = strengthValues.filter(s => s > attackRoll).length;
-        const willWin = !ec || woundsPreview === 0;
-        return (
-          <div className="border-2 border-orange-500 rounded p-3 bg-orange-50">
-            <p className="font-semibold text-orange-800 mb-1">⚔ Encounter!</p>
-            {ec && (
-              <div className="text-sm text-orange-700 mb-2 space-y-0.5">
-                <div><span className="font-medium">{ec.monsterName}</span> — STR: {ec.strength}</div>
-                <div>Combat card: {pendingEncounter.cardNumericValue} + Brawn {character.attributes.brawn} = <span className="font-bold">{attackRoll}</span></div>
-                <div>Reward: {ec.xp} XP / {ec.gold} Gold</div>
-                <div className={willWin ? 'text-green-700 font-semibold' : 'text-red-700 font-semibold'}>
-                  {willWin
-                    ? `✓ Victory — attack ${attackRoll} beats all STR values`
-                    : `✗ Defeat — ${woundsPreview} wound${woundsPreview !== 1 ? 's' : ''} (${woundsPreview} STR value${woundsPreview !== 1 ? 's' : ''} exceed attack ${attackRoll})`
-                  }
-                </div>
-              </div>
-            )}
+  return (
+    <div className="space-y-4">
+      <DeckPanel
+        deck={deck}
+        drawnCards={drawnCards}
+        deckCount={deckCount}
+        disabled={!!pendingEncounter || !!pendingTrap}
+        onDraw={drawCard}
+        onReset={handleResetDeck}
+        onDeckCountChange={onDeckCountChange}
+      >
+        {/* Trap resolution prompt */}
+        {pendingTrap && (
+          <div className="border-2 border-yellow-600 rounded p-3 bg-yellow-50">
+            <p className="font-semibold text-yellow-800 mb-1">
+              💣 Trap! Card value: {pendingTrap.cardNumericValue} vs your Agility: {character.attributes.agility}
+            </p>
+            <p className="text-sm text-yellow-700 mb-2">
+              {pendingTrap.cardNumericValue > character.attributes.agility
+                ? `Trap triggered — card (${pendingTrap.cardNumericValue}) beats agility (${character.attributes.agility}). You take 1 wound and movement ends.`
+                : `Trap evaded — card (${pendingTrap.cardNumericValue}) ≤ agility (${character.attributes.agility}). You may continue.`}
+            </p>
             <button
-              onClick={resolveEncounter}
-              className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-1.5 rounded text-sm"
+              onClick={resolveTrap}
+              className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-1.5 rounded text-sm"
             >
-              Resolve Encounter{pendingEncounter.remainingSteps > 0 && willWin ? ` (${pendingEncounter.remainingSteps} step${pendingEncounter.remainingSteps !== 1 ? 's' : ''} left)` : ''}
+              Resolve Trap
             </button>
           </div>
-        );
-      })()}
-
-      {/* Recently drawn cards */}
-      {drawnCards.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {[...drawnCards].reverse().slice(0, 13).map((card, index) => (
-            <div
-              key={index}
-              className={`w-10 h-14 border rounded flex items-center justify-center text-xs ${getCardColor(card.suit)}`}
-            >
-              <div className="text-center leading-tight">
-                <div className="font-bold">{card.value}</div>
-                <div>{getSuitSymbol(card.suit)}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+        )}
+        {/* Encounter resolution prompt */}
+        {encounterPrompt}
+      </DeckPanel>
 
       {/* Turn history */}
       {turnHistory.length > 0 && (

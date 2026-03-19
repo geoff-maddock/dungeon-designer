@@ -1,10 +1,18 @@
-import React from 'react';
-import { CharacterState, BodyLocation, ScoringCategory, CharacterClass, DEFAULT_CHARACTER } from '../types';
+import React, { useState } from 'react';
+import { CharacterState, BodyLocation, ScoringCategory, CharacterClass, DEFAULT_CHARACTER, CardDraw } from '../types';
 import { generateRandomCharacter, getScoringMilestones } from '../utils/characterGenerator';
+import DeckPanel, { getCardColor, getSuitSymbol } from './DeckPanel';
 
 interface CharacterBoardProps {
     character: CharacterState;
     onChange: (updated: CharacterState) => void;
+    // Shared deck
+    deck: CardDraw[];
+    drawnCards: CardDraw[];
+    deckCount: number;
+    onDrawCard: () => CardDraw | null;
+    onDeckCountChange: (n: number) => void;
+    onResetDeck: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -578,15 +586,36 @@ const CLASS_ICONS: Record<CharacterClass, string> = {
     Ranger: '🏹',
 };
 
+/** Black face cards (J/Q/K of ♠/♣) level up these classes */
+const BLACK_FACE_CLASSES = new Set<CharacterClass>(['Alchemist', 'Necromancer', 'Ranger']);
+/** Red face cards (J/Q/K of ♥/♦) level up these classes */
+const RED_FACE_CLASSES = new Set<CharacterClass>(['Bard', 'Druid', 'Knight']);
+
+function isFaceCard(value: string) {
+    return value === 'J' || value === 'Q' || value === 'K';
+}
+
+function isBlackSuit(suit: string) {
+    return suit === 'spades' || suit === 'clubs';
+}
+
 function ClassRow({
     className,
     level,
     onSet,
+    levelUpCard,
+    onLevelUp,
 }: {
     className: CharacterClass;
     level: number;
     onSet: (v: number) => void;
+    levelUpCard?: CardDraw;
+    onLevelUp?: () => void;
 }) {
+    const cardLabel = levelUpCard
+        ? `${levelUpCard.value}${getSuitSymbol(levelUpCard.suit)}`
+        : null;
+    const cardColor = levelUpCard ? getCardColor(levelUpCard.suit) : '';
     return (
         <div className="flex items-start gap-2 py-2 border-b border-gray-100 last:border-0">
             {/* Class name */}
@@ -596,6 +625,16 @@ function ClassRow({
                     <span>{className}</span>
                 </div>
                 <div className="text-xs text-gray-400">Lv {level}</div>
+                {levelUpCard && onLevelUp && (
+                    <button
+                        onClick={onLevelUp}
+                        className="mt-1 text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-0.5 rounded whitespace-nowrap"
+                        title={`Spend ${cardLabel} to level up ${className}`}
+                    >
+                        ↑ Level up
+                        <span className={`ml-1 font-bold ${cardColor}`}>{cardLabel}</span>
+                    </button>
+                )}
             </div>
 
             {/* Level pips (9 levels, 1–9; 0 = none) */}
@@ -633,9 +672,13 @@ function ClassRow({
 function ClassPanel({
     classes,
     onChange,
+    levelUpCard,
+    onSpendCard,
 }: {
     classes: CharacterState['classes'];
     onChange: (updated: CharacterState['classes']) => void;
+    levelUpCard: CardDraw | undefined;
+    onSpendCard: () => void;
 }) {
     function setLevel(className: CharacterClass, level: number) {
         onChange(classes.map(c => c.className === className ? { ...c, level } : c));
@@ -647,12 +690,25 @@ function ClassPanel({
             <div>
                 {CLASS_NAMES.map(name => {
                     const entry = classes.find(c => c.className === name)!;
+                    // Determine if the levelUpCard can level up this class
+                    let canLevelUp = false;
+                    if (levelUpCard && isFaceCard(levelUpCard.value)) {
+                        const isBlack = isBlackSuit(levelUpCard.suit);
+                        canLevelUp = isBlack
+                            ? BLACK_FACE_CLASSES.has(name as CharacterClass)
+                            : RED_FACE_CLASSES.has(name as CharacterClass);
+                    }
                     return (
                         <ClassRow
                             key={name}
                             className={name}
                             level={entry.level}
                             onSet={v => setLevel(name, v)}
+                            levelUpCard={canLevelUp ? levelUpCard : undefined}
+                            onLevelUp={canLevelUp ? () => {
+                                setLevel(name, Math.min(9, entry.level + 1));
+                                onSpendCard();
+                            } : undefined}
                         />
                     );
                 })}
@@ -665,7 +721,32 @@ function ClassPanel({
 // CharacterBoard (root)
 // ---------------------------------------------------------------------------
 
-const CharacterBoard: React.FC<CharacterBoardProps> = ({ character, onChange }) => {
+const CharacterBoard: React.FC<CharacterBoardProps> = ({
+    character,
+    onChange,
+    deck,
+    drawnCards,
+    deckCount,
+    onDrawCard,
+    onDeckCountChange,
+    onResetDeck,
+}) => {
+    const [spentCount, setSpentCount] = useState<number>(0);
+
+    // The last drawn card that hasn't been spent for leveling yet
+    const availableIndex = drawnCards.length - 1 - spentCount;
+    const levelUpCard: CardDraw | undefined =
+        availableIndex >= 0 && isFaceCard(drawnCards[availableIndex].value)
+            ? drawnCards[availableIndex]
+            : undefined;
+
+    const handleSpendCard = () => setSpentCount(prev => prev + 1);
+
+    // Reset spent count when the deck is reset (drawnCards goes to empty)
+    React.useEffect(() => {
+        if (drawnCards.length === 0) setSpentCount(0);
+    }, [drawnCards.length]);
+
     function update<K extends keyof CharacterState>(key: K, value: CharacterState[K]) {
         onChange({ ...character, [key]: value });
     }
@@ -710,10 +791,22 @@ const CharacterBoard: React.FC<CharacterBoardProps> = ({ character, onChange }) 
                 </div>
 
                 {/* ── RIGHT PANEL ── */}
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 flex flex-col gap-4">
+                    <div className="bg-white rounded-lg shadow p-3">
+                        <DeckPanel
+                            deck={deck}
+                            drawnCards={drawnCards}
+                            deckCount={deckCount}
+                            onDraw={onDrawCard}
+                            onReset={onResetDeck}
+                            onDeckCountChange={onDeckCountChange}
+                        />
+                    </div>
                     <ClassPanel
                         classes={character.classes}
                         onChange={c => update('classes', c)}
+                        levelUpCard={levelUpCard}
+                        onSpendCard={handleSpendCard}
                     />
                 </div>
             </div>
