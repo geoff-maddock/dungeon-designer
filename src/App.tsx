@@ -17,7 +17,8 @@ import TowerBoard from './components/TowerBoard';
 import ForestBoard from './components/ForestBoard';
 import CityBoard from './components/CityBoard';
 import CharacterBoard from './components/CharacterBoard';
-import { CharacterState, DEFAULT_CHARACTER, CityBoardState, DEFAULT_CITY_BOARD, CardDraw } from './types';
+import GameOverScreen from './components/GameOverScreen';
+import { CharacterState, DEFAULT_CHARACTER, DEFAULT_SKILL_STATE, CityBoardState, DEFAULT_CITY_BOARD, CardDraw } from './types';
 
 const DEFAULT_RANDOM_BOARD_SETTINGS: { [key in CellType | ColorRequirement]?: number } = {
   [CellType.Key]: 3,
@@ -68,10 +69,21 @@ function App() {
   const [sharedDeck, setSharedDeck] = useState<SharedDeckState>(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('sharedDeckState') || 'null') as SharedDeckState | null;
-      if (stored && stored.deck && stored.deck.length > 0) return stored;
+      if (stored && stored.deck && stored.deck.length > 0) {
+        return {
+          ...stored,
+          hand:           stored.hand           ?? [],
+          handSize:       stored.handSize       ?? 2,
+          playsPerTurn:   stored.playsPerTurn   ?? 1,
+          playsRemaining: stored.playsRemaining ?? 1,
+          discardPile:    stored.discardPile    ?? [],
+        };
+      }
     } catch { /* ignore */ }
-    return { deck: shuffleDeck(createStandardDeck()), drawnCards: [], deckCount: 1 };
+    return { deck: shuffleDeck(createStandardDeck()), drawnCards: [], hand: [], handSize: 2, playsPerTurn: 1, playsRemaining: 1, discardPile: [], deckCount: 1 };
   });
+
+  const [selectedHandIndex, setSelectedHandIndex] = useState<number | null>(null);
   useEffect(() => {
     localStorage.setItem('sharedDeckState', JSON.stringify(sharedDeck));
   }, [sharedDeck]);
@@ -87,15 +99,67 @@ function App() {
     localStorage.setItem('dungeonSession', JSON.stringify(dungeonSession));
   }, [dungeonSession]);
 
-  const handleDrawCard = (): CardDraw | null => {
-    let drawn: CardDraw | null = null;
+  /** Draw one card from the deck into the player's hand (up to handSize). */
+  const handleDrawToHand = () => {
     setSharedDeck(prev => {
-      if (prev.deck.length === 0) return prev;
+      if (prev.deck.length === 0 || prev.hand.length >= prev.handSize) return prev;
       const [card, ...rest] = prev.deck;
-      drawn = card;
-      return { ...prev, deck: rest, drawnCards: [...prev.drawnCards, card] };
+      return { ...prev, deck: rest, hand: [...prev.hand, card] };
     });
-    return drawn;
+  };
+
+  /** Mark a hand card as selected (or deselect if same index clicked). */
+  const handleSelectHandCard = (idx: number | null) => {
+    setSelectedHandIndex(prev => (prev === idx ? null : idx));
+  };
+
+  /** Play a hand card: move it to played history, decrement plays.
+   *  Auto-ends the turn (discards remaining hand) when plays hit 0. */
+  const handlePlayCard = (idx: number) => {
+    setSelectedHandIndex(null);
+    setSharedDeck(prev => {
+      if (idx < 0 || idx >= prev.hand.length) return prev;
+      const card = prev.hand[idx];
+      const newHand = prev.hand.filter((_, i) => i !== idx);
+      const newPlaysRemaining = prev.playsRemaining - 1;
+      if (newPlaysRemaining <= 0) {
+        // auto-end turn: remaining hand → discard
+        return {
+          ...prev,
+          hand: [],
+          drawnCards: [...prev.drawnCards, card],
+          discardPile: [...prev.discardPile, ...newHand],
+          playsRemaining: prev.playsPerTurn,
+        };
+      }
+      return {
+        ...prev,
+        hand: newHand,
+        drawnCards: [...prev.drawnCards, card],
+        playsRemaining: newPlaysRemaining,
+      };
+    });
+  };
+
+  /** Manually end the turn: discard remaining hand, reset plays. */
+  const handleEndTurn = () => {
+    setSelectedHandIndex(null);
+    setSharedDeck(prev => ({
+      ...prev,
+      discardPile: [...prev.discardPile, ...prev.hand],
+      hand: [],
+      playsRemaining: prev.playsPerTurn,
+    }));
+  };
+
+  const handleHandSizeChange = (n: number) => {
+    if (n < 1 || n > 6) return;
+    setSharedDeck(prev => ({ ...prev, handSize: n }));
+  };
+
+  const handlePlaysPerTurnChange = (n: number) => {
+    if (n < 1 || n > 6) return;
+    setSharedDeck(prev => ({ ...prev, playsPerTurn: n, playsRemaining: Math.min(prev.playsRemaining, n) }));
   };
 
   const buildFreshDeck = (count: number): CardDraw[] => {
@@ -105,12 +169,30 @@ function App() {
   };
 
   const handleResetSharedDeck = () => {
-    setSharedDeck(prev => ({ deck: buildFreshDeck(prev.deckCount), drawnCards: [], deckCount: prev.deckCount }));
+    setSelectedHandIndex(null);
+    setSharedDeck(prev => ({
+      ...prev,
+      deck: buildFreshDeck(prev.deckCount),
+      drawnCards: [],
+      hand: [],
+      discardPile: [],
+      playsRemaining: prev.playsPerTurn,
+    }));
   };
 
   const handleDeckCountChange = (n: number) => {
     if (n < 1 || n > 3) return;
-    setSharedDeck({ deck: buildFreshDeck(n), drawnCards: [], deckCount: n });
+    setSelectedHandIndex(null);
+    setSharedDeck(prev => ({
+      deck: buildFreshDeck(n),
+      drawnCards: [],
+      hand: [],
+      discardPile: [],
+      handSize: prev.handSize,
+      playsPerTurn: prev.playsPerTurn,
+      playsRemaining: prev.playsPerTurn,
+      deckCount: n,
+    }));
   };
 
   const handleResetGame = () => {
@@ -130,7 +212,7 @@ function App() {
         ...loc,
         hits: typeof loc.hits === 'number' ? loc.hits : (typeof loc.wounds === 'number' ? loc.wounds : 0),
       }));
-      return { ...DEFAULT_CHARACTER, ...stored, body: migratedBody, wounds: typeof stored.wounds === 'number' ? stored.wounds : 0 };
+      return { ...DEFAULT_CHARACTER, ...stored, body: migratedBody, wounds: typeof stored.wounds === 'number' ? stored.wounds : 0, skillStates: stored.skillStates ?? DEFAULT_SKILL_STATE };
     } catch {
       return DEFAULT_CHARACTER;
     }
@@ -614,6 +696,8 @@ function App() {
     { page: 'character', label: 'Character', icon: '⚔️' },
   ];
 
+  const isGameOver = sharedDeck.deck.length === 0 && sharedDeck.hand.length === 0;
+
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden">
       {/* Left Sidebar Navigation */}
@@ -1092,7 +1176,18 @@ function App() {
                         deck={sharedDeck.deck}
                         drawnCards={sharedDeck.drawnCards}
                         deckCount={sharedDeck.deckCount}
-                        onDrawCard={handleDrawCard}
+                        hand={sharedDeck.hand}
+                        handSize={sharedDeck.handSize}
+                        playsPerTurn={sharedDeck.playsPerTurn}
+                        playsRemaining={sharedDeck.playsRemaining}
+                        discardPile={sharedDeck.discardPile}
+                        selectedHandIndex={selectedHandIndex}
+                        onDrawToHand={handleDrawToHand}
+                        onSelectHandCard={handleSelectHandCard}
+                        onPlayCard={handlePlayCard}
+                        onEndTurn={handleEndTurn}
+                        onHandSizeChange={handleHandSizeChange}
+                        onPlaysPerTurnChange={handlePlaysPerTurnChange}
                         onDeckCountChange={handleDeckCountChange}
                         onResetDeck={handleResetSharedDeck}
                         session={dungeonSession}
@@ -1213,7 +1308,18 @@ function App() {
               deck={sharedDeck.deck}
               drawnCards={sharedDeck.drawnCards}
               deckCount={sharedDeck.deckCount}
-              onDrawCard={handleDrawCard}
+              hand={sharedDeck.hand}
+              handSize={sharedDeck.handSize}
+              playsPerTurn={sharedDeck.playsPerTurn}
+              playsRemaining={sharedDeck.playsRemaining}
+              discardPile={sharedDeck.discardPile}
+              selectedHandIndex={selectedHandIndex}
+              onDrawToHand={handleDrawToHand}
+              onSelectHandCard={handleSelectHandCard}
+              onPlayCard={handlePlayCard}
+              onEndTurn={handleEndTurn}
+              onHandSizeChange={handleHandSizeChange}
+              onPlaysPerTurnChange={handlePlaysPerTurnChange}
               onDeckCountChange={handleDeckCountChange}
               onResetDeck={handleResetSharedDeck}
             />
@@ -1225,7 +1331,18 @@ function App() {
               deck={sharedDeck.deck}
               drawnCards={sharedDeck.drawnCards}
               deckCount={sharedDeck.deckCount}
-              onDrawCard={handleDrawCard}
+              hand={sharedDeck.hand}
+              handSize={sharedDeck.handSize}
+              playsPerTurn={sharedDeck.playsPerTurn}
+              playsRemaining={sharedDeck.playsRemaining}
+              discardPile={sharedDeck.discardPile}
+              selectedHandIndex={selectedHandIndex}
+              onDrawToHand={handleDrawToHand}
+              onSelectHandCard={handleSelectHandCard}
+              onPlayCard={handlePlayCard}
+              onEndTurn={handleEndTurn}
+              onHandSizeChange={handleHandSizeChange}
+              onPlaysPerTurnChange={handlePlaysPerTurnChange}
               onDeckCountChange={handleDeckCountChange}
               onResetDeck={handleResetSharedDeck}
             />
@@ -1241,7 +1358,18 @@ function App() {
               deck={sharedDeck.deck}
               drawnCards={sharedDeck.drawnCards}
               deckCount={sharedDeck.deckCount}
-              onDrawCard={handleDrawCard}
+              hand={sharedDeck.hand}
+              handSize={sharedDeck.handSize}
+              playsPerTurn={sharedDeck.playsPerTurn}
+              playsRemaining={sharedDeck.playsRemaining}
+              discardPile={sharedDeck.discardPile}
+              selectedHandIndex={selectedHandIndex}
+              onDrawToHand={handleDrawToHand}
+              onSelectHandCard={handleSelectHandCard}
+              onPlayCard={handlePlayCard}
+              onEndTurn={handleEndTurn}
+              onHandSizeChange={handleHandSizeChange}
+              onPlaysPerTurnChange={handlePlaysPerTurnChange}
               onDeckCountChange={handleDeckCountChange}
               onResetDeck={handleResetSharedDeck}
             />
@@ -1255,7 +1383,18 @@ function App() {
               deck={sharedDeck.deck}
               drawnCards={sharedDeck.drawnCards}
               deckCount={sharedDeck.deckCount}
-              onDrawCard={handleDrawCard}
+              hand={sharedDeck.hand}
+              handSize={sharedDeck.handSize}
+              playsPerTurn={sharedDeck.playsPerTurn}
+              playsRemaining={sharedDeck.playsRemaining}
+              discardPile={sharedDeck.discardPile}
+              selectedHandIndex={selectedHandIndex}
+              onDrawToHand={handleDrawToHand}
+              onSelectHandCard={handleSelectHandCard}
+              onPlayCard={handlePlayCard}
+              onEndTurn={handleEndTurn}
+              onHandSizeChange={handleHandSizeChange}
+              onPlaysPerTurnChange={handlePlaysPerTurnChange}
               onDeckCountChange={handleDeckCountChange}
               onResetDeck={handleResetSharedDeck}
             />
@@ -1263,6 +1402,10 @@ function App() {
         )}
 
       </div>
+
+      {isGameOver && (
+        <GameOverScreen character={character} onNewGame={handleResetGame} />
+      )}
     </div>
   );
 }

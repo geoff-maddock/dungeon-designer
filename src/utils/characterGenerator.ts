@@ -1,4 +1,4 @@
-import { CharacterState, DEFAULT_CHARACTER } from '../types';
+import { CharacterState, DEFAULT_CHARACTER, DEFAULT_SKILL_STATE } from '../types';
 
 const FANTASY_NAMES = [
     'Aldric', 'Brynn', 'Caelum', 'Dara', 'Elara', 'Finn', 'Gwen', 'Hadyn',
@@ -66,5 +66,6 @@ export function generateRandomCharacter(): CharacterState {
         scoring: { discovery: 0, champion: 0, arcana: 0, fortune: 0 },
         wounds: 0,
         classes: DEFAULT_CHARACTER.classes.map(cls => ({ ...cls, level: 0 })),
+        skillStates: DEFAULT_SKILL_STATE,
     };
 }

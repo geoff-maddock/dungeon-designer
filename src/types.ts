@@ -194,6 +194,143 @@ export interface ClassProgress {
   level: number; // 0–9
 }
 
+// ---------------------------------------------------------------------------
+// Class Skill State types
+// ---------------------------------------------------------------------------
+
+// --- Alchemist ---
+export interface PotionRackState {
+  rowsFilled: [number, number, number]; // Low/Mid/High rows, each 0–3
+}
+export interface TransmutationLadderState {
+  steps: (number | null)[]; // length 5; null = empty, number = placed card value
+}
+export interface VolatileFlaskState {
+  storedValue: number | null;
+}
+
+// --- Bard ---
+export interface SongbookState {
+  ballad: number;
+  chorus: number;
+}
+export interface CrescendoState {
+  columns: [number[], number[], number[]]; // A/B/C, up to 4 values each
+  locked: [boolean, boolean, boolean];
+}
+export interface AudienceMeterState {
+  audience: number; // 0–10
+}
+
+// --- Druid ---
+export interface SacredGroveState {
+  zonesFilled: [number, number, number]; // Forest/Water/Stone, each 0–4
+}
+export interface BeastFormsState {
+  wolf: boolean;
+  bear: boolean;
+  hawk: boolean;
+}
+export interface SeasonWheelState {
+  segmentsFilled: number; // 0–4; reaching 4 = cash-out + reset
+}
+
+// --- Knight ---
+export interface ArmsAndOathRowsState {
+  honorRow: (number | null)[]; // length 5, ascending constraint
+  mightRow: (number | null)[]; // length 5, descending constraint
+}
+export type OathType = 'Defend' | 'Slay' | 'Guard' | 'Conquer';
+export interface OathBoardState {
+  activeOath: OathType | null;
+  oathTrackSteps: number; // 0–4
+}
+export interface FortressState {
+  tier1: number | null;
+  tier2: number | null;
+  tier3: number | null;
+}
+
+// --- Necromancer ---
+export interface GraveLedgerState {
+  skeleton: number; // 0–4 steps advanced
+  ghost: number;
+  wraith: number;
+}
+export interface CryptCapacityState {
+  controlLevel: number; // 1–5
+  doubleUsedThisRound: boolean;
+}
+export interface SoulRingsState {
+  ring1: boolean[]; // length 6, positions 1–6
+  ring2: boolean[];
+}
+
+// --- Ranger ---
+export interface TrailMapState {
+  currentNode: number; // -1 = not started, 0–6 = node index
+}
+export interface QuarryBoardState {
+  beastCount: number;      // 0–3 low values placed
+  raiderCount: number;     // 0–3 mid values placed
+  spiritValues: number[];  // up to 3 values; complete when sum >= 15
+}
+export interface SurvivalKitState {
+  rations: boolean;
+  arrows: boolean;
+  torch: boolean;
+  rope: boolean;
+}
+
+// Aggregate skill state — flat object, one field per skill (18 total)
+export interface ClassSkillState {
+  potionRack: PotionRackState;
+  transmutationLadder: TransmutationLadderState;
+  volatileFlask: VolatileFlaskState;
+  songbook: SongbookState;
+  crescendo: CrescendoState;
+  audienceMeter: AudienceMeterState;
+  sacredGrove: SacredGroveState;
+  beastForms: BeastFormsState;
+  seasonWheel: SeasonWheelState;
+  armsAndOathRows: ArmsAndOathRowsState;
+  oathBoard: OathBoardState;
+  fortress: FortressState;
+  graveLedger: GraveLedgerState;
+  cryptCapacity: CryptCapacityState;
+  soulRings: SoulRingsState;
+  trailMap: TrailMapState;
+  quarryBoard: QuarryBoardState;
+  survivalKit: SurvivalKitState;
+}
+
+export const DEFAULT_SKILL_STATE: ClassSkillState = {
+  potionRack: { rowsFilled: [0, 0, 0] },
+  transmutationLadder: { steps: [null, null, null, null, null] },
+  volatileFlask: { storedValue: null },
+  songbook: { ballad: 0, chorus: 0 },
+  crescendo: { columns: [[], [], []], locked: [false, false, false] },
+  audienceMeter: { audience: 0 },
+  sacredGrove: { zonesFilled: [0, 0, 0] },
+  beastForms: { wolf: false, bear: false, hawk: false },
+  seasonWheel: { segmentsFilled: 0 },
+  armsAndOathRows: {
+    honorRow: [null, null, null, null, null],
+    mightRow: [null, null, null, null, null],
+  },
+  oathBoard: { activeOath: null, oathTrackSteps: 0 },
+  fortress: { tier1: null, tier2: null, tier3: null },
+  graveLedger: { skeleton: 0, ghost: 0, wraith: 0 },
+  cryptCapacity: { controlLevel: 1, doubleUsedThisRound: false },
+  soulRings: {
+    ring1: [false, false, false, false, false, false],
+    ring2: [false, false, false, false, false, false],
+  },
+  trailMap: { currentNode: -1 },
+  quarryBoard: { beastCount: 0, raiderCount: 0, spiritValues: [] },
+  survivalKit: { rations: false, arrows: false, torch: false, rope: false },
+};
+
 export interface CharacterState {
   name: string;
   body: BodyLocation[];
@@ -203,6 +340,7 @@ export interface CharacterState {
   scoring: Record<ScoringCategory, number>;
   classes: ClassProgress[];
   wounds: number;    // global wound counter (0-10), shown as hearts
+  skillStates: ClassSkillState;
 }
 
 export const DEFAULT_CHARACTER: CharacterState = {
@@ -228,6 +366,7 @@ export const DEFAULT_CHARACTER: CharacterState = {
     { className: 'Necromancer', level: 0 },
     { className: 'Ranger', level: 0 },
   ],
+  skillStates: DEFAULT_SKILL_STATE,
 };
 
 // ---------------------------------------------------------------------------
@@ -236,13 +375,23 @@ export const DEFAULT_CHARACTER: CharacterState = {
 
 export interface SharedDeckState {
   deck: CardDraw[];
-  drawnCards: CardDraw[];
+  drawnCards: CardDraw[];   // history of all played cards
+  discardPile: CardDraw[];  // cards burned from hand at end of turn
+  hand: CardDraw[];         // cards currently held by the player
+  handSize: number;         // max cards that can be held (default 2)
+  playsPerTurn: number;     // how many cards can be played per turn (default 1)
+  playsRemaining: number;   // plays left this turn
   deckCount: number;
 }
 
 export const DEFAULT_SHARED_DECK: SharedDeckState = {
   deck: [],        // populated at runtime via createStandardDeck() + shuffleDeck()
   drawnCards: [],
+  discardPile: [],
+  hand: [],
+  handSize: 2,
+  playsPerTurn: 1,
+  playsRemaining: 1,
   deckCount: 1,
 };
 

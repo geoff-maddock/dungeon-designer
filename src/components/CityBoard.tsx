@@ -22,8 +22,19 @@ interface CityBoardProps {
   // Shared deck
   deck: CardDraw[];
   drawnCards: CardDraw[];
+  discardPile: CardDraw[];
   deckCount: number;
-  onDrawCard: () => CardDraw | null;
+  hand: CardDraw[];
+  handSize: number;
+  playsPerTurn: number;
+  playsRemaining: number;
+  selectedHandIndex: number | null;
+  onDrawToHand: () => void;
+  onSelectHandCard: (idx: number | null) => void;
+  onPlayCard: (idx: number) => void;
+  onEndTurn: () => void;
+  onHandSizeChange: (n: number) => void;
+  onPlaysPerTurnChange: (n: number) => void;
   onDeckCountChange: (n: number) => void;
   onResetDeck: () => void;
 }
@@ -43,7 +54,7 @@ function CityDeckGuidance({ lastCard }: { lastCard: CardDraw | undefined }) {
   if (!isDiamond) {
     return (
       <div className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded p-2">
-        <span className={`font-bold ${colorClass}`}>{cardLabel}</span> drawn — no City action for {lastCard.suit} cards.
+        <span className={`font-bold ${colorClass}`}>{cardLabel}</span> — no City action for {lastCard.suit} cards.
       </div>
     );
   }
@@ -54,13 +65,13 @@ function CityDeckGuidance({ lastCard }: { lastCard: CardDraw | undefined }) {
   return (
     <div className="text-sm bg-amber-50 border border-amber-300 rounded p-2 space-y-0.5">
       <div>
-        <span className={`font-bold ${colorClass}`}>{cardLabel}</span> drawn —{' '}
+        <span className={`font-bold ${colorClass}`}>{cardLabel}</span> selected —{' '}
         {matchingBuilding
-          ? <span>visit <strong>{buildingName}</strong> or redirect to Graveyard if exhausted.</span>
+          ? <span><strong>{buildingName}</strong> is now unlocked. Click the next visit slot to play.</span>
           : <span>visit Graveyard (wild ♦).</span>}
       </div>
       {isFace && (
-        <div className="text-amber-700 text-xs">Noble ability: check the {buildingName} milestone for special rewards.</div>
+        <div className="text-amber-700 text-xs">Noble ability available — see the {buildingName} card.</div>
       )}
     </div>
   );
@@ -76,42 +87,48 @@ function VisitCircles({
   layout,
   onVisit,
   milestoneThresholds,
+  isPlayable,
 }: {
   visits: number;
   visitCap: number;
   layout?: 'row' | 'grid';
   onVisit: (newCount: number) => void;
   milestoneThresholds: number[];
+  isPlayable: boolean;
 }) {
   if (visitCap === 0) return null;
 
-  const handleClick = (index: number) => {
-    // Click a filled circle to un-fill it; click an empty circle to fill up to it
-    const newCount = index < visits ? index : index + 1;
-    onVisit(Math.min(newCount, visitCap));
-  };
-
   const circles = Array.from({ length: visitCap }, (_, i) => {
     const filled = i < visits;
+    const isNextSlot = i === visits && isPlayable;
     const isMilestone = milestoneThresholds.includes(i + 1);
+
     return (
       <button
         key={i}
-        onClick={() => handleClick(i)}
-        title={`Visit ${i + 1}${isMilestone ? ' — Milestone!' : ''}`}
+        onClick={() => isNextSlot ? onVisit(visits + 1) : undefined}
+        disabled={!isNextSlot}
+        title={
+          isNextSlot
+            ? `Visit ${i + 1}${isMilestone ? ' — Milestone!' : ''} — click to play card`
+            : filled ? `Visit ${i + 1} (recorded)` : `Visit ${i + 1} (locked — select matching ♦ card)`
+        }
         className={[
           'w-6 h-6 rounded-full border-2 transition-all flex items-center justify-center flex-shrink-0',
           filled
-            ? 'bg-amber-500 border-amber-600 shadow-inner'
-            : 'bg-white border-gray-300 hover:border-amber-400',
-          isMilestone && !filled ? 'border-amber-500 ring-1 ring-amber-400' : '',
+            ? 'bg-amber-500 border-amber-600 shadow-inner cursor-default'
+            : isNextSlot
+              ? 'bg-white border-green-500 ring-2 ring-green-400 ring-offset-1 hover:bg-green-50 cursor-pointer animate-pulse'
+              : 'bg-white border-gray-200 cursor-not-allowed opacity-50',
           isMilestone && filled ? 'ring-2 ring-amber-300' : '',
+          isMilestone && isNextSlot ? 'border-green-600' : '',
+          isMilestone && !filled && !isNextSlot ? 'border-amber-300 opacity-50' : '',
         ]
           .filter(Boolean)
           .join(' ')}
       >
         {isMilestone && (
-          <span className={`text-xs font-bold leading-none ${filled ? 'text-white' : 'text-amber-500'}`}>
+          <span className={`text-xs font-bold leading-none ${filled ? 'text-white' : isNextSlot ? 'text-green-600' : 'text-amber-300'}`}>
             ★
           </span>
         )}
@@ -143,6 +160,7 @@ interface BuildingCardProps {
   onStateChange: (updated: CityBuildingState) => void;
   globalDepositCount: number;
   onGlobalDepositChange: (delta: number) => void;
+  selectedCard: CardDraw | null;
 }
 
 function BuildingCard({
@@ -151,12 +169,19 @@ function BuildingCard({
   onStateChange,
   globalDepositCount,
   onGlobalDepositChange,
+  selectedCard,
 }: BuildingCardProps) {
+  const [showRules, setShowRules] = useState(false);
   const exhausted = isExhausted(state.visits, state.visitCap);
   const milestoneThresholds = config.milestones.map(m => m.threshold);
 
+  // A building is playable when the selected card is a diamond matching its rank
+  const isDiamond = selectedCard?.suit === 'diamonds';
+  const rankMatch = config.rank === 'wild' || config.rank === selectedCard?.value;
+  const isPlayable = !!(isDiamond && rankMatch && !exhausted && selectedCard !== null);
+
   const handleVisit = (newCount: number) => {
-    if (exhausted && newCount > state.visits) return;
+    if (!isPlayable) return;
     onStateChange({ ...state, visits: newCount });
   };
 
@@ -231,10 +256,11 @@ function BuildingCard({
   return (
     <div
       className={[
-        'relative rounded-lg border-2 p-3 flex flex-col gap-2 shadow-sm',
+        'relative rounded-lg border-2 p-3 flex flex-col gap-2 shadow-sm transition-shadow',
         districtBorder[config.district],
         districtBg[config.district],
         exhausted ? 'opacity-60' : '',
+        isPlayable ? 'ring-2 ring-green-500 ring-offset-1 shadow-md' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -248,6 +274,15 @@ function BuildingCard({
         </div>
       )}
 
+      {/* Playable indicator */}
+      {isPlayable && (
+        <div className="absolute top-1 right-8 pointer-events-none">
+          <span className="bg-green-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow">
+            UNLOCKED
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between gap-1">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -257,15 +292,49 @@ function BuildingCard({
           <span className="text-base leading-none">{config.icon}</span>
           <span className="text-sm font-semibold text-gray-800 leading-tight">{config.name}</span>
         </div>
-        {state.visitCap > 0 && (
-          <span className="text-xs text-gray-500 flex-shrink-0">{state.visits}/{state.visitCap}</span>
-        )}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {state.visitCap > 0 && (
+            <span className="text-xs text-gray-500">{state.visits}/{state.visitCap}</span>
+          )}
+          <button
+            onClick={e => { e.stopPropagation(); setShowRules(r => !r); }}
+            className={`w-5 h-5 rounded-full border text-xs flex items-center justify-center transition-colors ${showRules ? 'bg-amber-500 border-amber-600 text-white' : 'bg-white border-gray-300 text-gray-500 hover:border-amber-400 hover:text-amber-600'}`}
+            title="Show rules"
+          >
+            ?
+          </button>
+        </div>
       </div>
+
+      {/* Rules panel */}
+      {showRules && (
+        <div className="text-xs bg-white border border-amber-200 rounded p-2 flex flex-col gap-1 shadow-inner">
+          <p className="font-semibold text-amber-700">
+            Requires: ♦{config.rank === 'wild' ? 'Any diamond card' : config.rank}
+          </p>
+          <p><span className="font-semibold text-gray-700">On visit:</span> {config.visitEffect}</p>
+          {config.milestones.map(m => (
+            <p key={m.threshold} className="text-gray-600">
+              <span className="font-semibold text-amber-700">⬦{m.threshold}:</span> {m.label}
+            </p>
+          ))}
+          {config.optionalSpend && (
+            <p className="text-indigo-700">
+              <span className="font-semibold">Spend:</span> {config.optionalSpend}
+            </p>
+          )}
+          {config.specialAbility && (
+            <p className="text-purple-700">
+              <span className="font-semibold">★ Noble:</span> {config.specialAbility}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Visit effect */}
       <p className="text-xs text-gray-700 leading-snug">{config.visitEffect}</p>
 
-      {/* Visit track */}
+      {/* Visit track (non-Graveyard) */}
       {state.visitCap > 0 && (
         <div className="flex flex-col gap-1">
           <VisitCircles
@@ -274,6 +343,7 @@ function BuildingCard({
             layout={config.trackLayout}
             onVisit={handleVisit}
             milestoneThresholds={milestoneThresholds}
+            isPlayable={isPlayable}
           />
           <div className="flex flex-col gap-0.5">
             {config.milestones.map(m => (
@@ -288,6 +358,13 @@ function BuildingCard({
             ))}
           </div>
         </div>
+      )}
+
+      {/* Locked hint for non-graveyard buildings */}
+      {!isGraveyard && !isPlayable && !exhausted && (
+        <p className="text-[10px] text-gray-400 italic">
+          Select ♦{config.rank} from hand to unlock
+        </p>
       )}
 
       {/* Optional spend */}
@@ -390,7 +467,7 @@ function BuildingCard({
               <div className="text-2xl font-bold text-gray-800 leading-none">{soulsAvailable}</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500">Accumulated (total)</div>
+              <div className="text-xs text-gray-500">Accumulated</div>
               <div className="text-lg font-semibold text-gray-600 leading-none">{soulsGained}</div>
             </div>
             <div>
@@ -399,21 +476,19 @@ function BuildingCard({
             </div>
           </div>
 
-          {/* Add souls by card rank */}
+          {/* Visit button — card-driven */}
           <div className="flex flex-col gap-1">
-            <p className="text-xs font-semibold text-gray-700">Record visit (by ♦ rank):</p>
-            <div className="flex flex-wrap gap-1">
-              {(['2', '5', '9', 'J', 'A'] as CardValue[]).map(r => (
-                <button
-                  key={r}
-                  onClick={() => handleAddSouls(r)}
-                  title={`♦${r} → +${soulsForRank(r)} Soul(s)`}
-                  className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-1.5 py-0.5 rounded font-medium"
-                >
-                  ♦{r} +{soulsForRank(r)}
-                </button>
-              ))}
-            </div>
+            <p className="text-xs font-semibold text-gray-700">Record visit:</p>
+            {isPlayable && selectedCard ? (
+              <button
+                onClick={() => handleAddSouls(selectedCard.value as CardValue)}
+                className="text-xs bg-gray-700 hover:bg-gray-800 text-white px-3 py-1.5 rounded font-medium"
+              >
+                Visit with ♦{selectedCard.value} → +{soulsForRank(selectedCard.value as CardValue)} Soul{soulsForRank(selectedCard.value as CardValue) !== 1 ? 's' : ''}
+              </button>
+            ) : (
+              <p className="text-[10px] text-gray-400 italic">Select any ♦ diamond card from hand to visit</p>
+            )}
           </div>
 
           {/* Accumulation milestones */}
@@ -465,6 +540,7 @@ function DistrictSection({
   onBuildingChange,
   globalDepositCount,
   onGlobalDepositChange,
+  selectedCard,
 }: {
   title: CityDistrict;
   icon: string;
@@ -473,6 +549,7 @@ function DistrictSection({
   onBuildingChange: (rank: CardValue | 'wild', updated: CityBuildingState) => void;
   globalDepositCount: number;
   onGlobalDepositChange: (delta: number) => void;
+  selectedCard: CardDraw | null;
 }) {
   const headerBg: Record<CityDistrict, string> = {
     Commons: 'bg-green-700',
@@ -500,6 +577,7 @@ function DistrictSection({
               onStateChange={updated => onBuildingChange(config.rank, updated)}
               globalDepositCount={globalDepositCount}
               onGlobalDepositChange={onGlobalDepositChange}
+              selectedCard={selectedCard}
             />
           );
         })}
@@ -517,19 +595,36 @@ export default function CityBoard({
   onCityChange,
   deck,
   drawnCards,
+  discardPile,
   deckCount,
-  onDrawCard,
+  hand,
+  handSize,
+  playsPerTurn,
+  playsRemaining,
+  selectedHandIndex,
+  onDrawToHand,
+  onSelectHandCard,
+  onPlayCard,
+  onEndTurn,
+  onHandSizeChange,
+  onPlaysPerTurnChange,
   onDeckCountChange,
   onResetDeck,
 }: CityBoardProps) {
   const [showHelp, setShowHelp] = useState(false);
-  const lastDrawnCard = drawnCards.length > 0 ? drawnCards[drawnCards.length - 1] : undefined;
+
+  const selectedCard: CardDraw | null = selectedHandIndex !== null ? (hand[selectedHandIndex] ?? null) : null;
 
   const handleBuildingChange = (rank: CardValue | 'wild', updated: CityBuildingState) => {
+    const current = cityState.buildings.find(b => b.rank === rank);
+    const isNewVisit = current !== undefined && updated.visits > current.visits;
     onCityChange({
       ...cityState,
       buildings: cityState.buildings.map(b => (b.rank === rank ? updated : b)),
     });
+    if (isNewVisit && selectedHandIndex !== null) {
+      onPlayCard(selectedHandIndex);
+    }
   };
 
   const handleGlobalDepositChange = (delta: number) => {
@@ -562,7 +657,7 @@ export default function CityBoard({
         <div className="flex justify-between items-center flex-wrap gap-2">
           <div>
             <h2 className="text-xl font-bold">City Board</h2>
-            <p className="text-amber-200 text-sm">♦ Diamond cards required to visit buildings</p>
+            <p className="text-amber-200 text-sm">Select a ♦ diamond card from hand to unlock its matching building</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm bg-amber-800 px-2 py-1 rounded">
@@ -588,11 +683,12 @@ export default function CityBoard({
 
         {showHelp && (
           <div className="mt-3 bg-amber-800 rounded p-3 text-sm text-amber-100 space-y-1 max-w-3xl">
-            <p><strong>Entry:</strong> Spend a ♦ Diamond card to visit the building matching its rank.</p>
-            <p><strong>Visiting:</strong> Click the next empty circle to record a visit. Milestone circles (★) trigger bonus rewards when filled.</p>
-            <p><strong>Exhausted:</strong> When all circles are filled, the building is exhausted — redirect that Diamond to the Graveyard instead.</p>
-            <p><strong>Bank:</strong> Pay Gold on a Bank visit to open a deposit that earns Gold + Fortune each round. Max 3 active deposits globally.</p>
-            <p><strong>Graveyard:</strong> Any ♦ card may visit the Graveyard. Select its rank to record Souls gained. Spend Souls for resources at any time.</p>
+            <p><strong>Entry:</strong> Select a ♦ Diamond card from your hand. The matching building will glow green and show an UNLOCKED badge.</p>
+            <p><strong>Visiting:</strong> Click the pulsing green circle on the unlocked building to record a visit. The card is consumed automatically.</p>
+            <p><strong>Milestones:</strong> Milestone circles (★) trigger bonus rewards when filled. Check the building's visit effect and milestone list.</p>
+            <p><strong>Exhausted:</strong> When all circles are filled the building is exhausted — redirect that Diamond to the Graveyard instead.</p>
+            <p><strong>Graveyard:</strong> Any ♦ card may visit the Graveyard — click its Visit button when a diamond is selected. Souls gained depend on the card's rank.</p>
+            <p><strong>Rules:</strong> Click the <strong>?</strong> button on any building to see its full rules inline.</p>
           </div>
         )}
       </header>
@@ -604,12 +700,22 @@ export default function CityBoard({
           <DeckPanel
             deck={deck}
             drawnCards={drawnCards}
+            discardPile={discardPile}
             deckCount={deckCount}
-            onDraw={onDrawCard}
+            hand={hand}
+            handSize={handSize}
+            playsPerTurn={playsPerTurn}
+            playsRemaining={playsRemaining}
+            selectedHandIndex={selectedHandIndex}
+            onDrawToHand={onDrawToHand}
+            onSelectHandCard={onSelectHandCard}
+            onEndTurn={onEndTurn}
+            onHandSizeChange={onHandSizeChange}
+            onPlaysPerTurnChange={onPlaysPerTurnChange}
             onReset={onResetDeck}
             onDeckCountChange={onDeckCountChange}
           >
-            <CityDeckGuidance lastCard={lastDrawnCard} />
+            <CityDeckGuidance lastCard={selectedCard ?? undefined} />
           </DeckPanel>
         </div>
 
@@ -626,6 +732,7 @@ export default function CityBoard({
               onBuildingChange={handleBuildingChange}
               globalDepositCount={cityState.globalDepositCount}
               onGlobalDepositChange={handleGlobalDepositChange}
+              selectedCard={selectedCard}
             />
           );
         })}
