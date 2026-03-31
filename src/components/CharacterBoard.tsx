@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { CharacterState, BodyLocation, ScoringCategory, CharacterClass, DEFAULT_CHARACTER, CardDraw } from '../types';
+import React from 'react';
+import { CharacterState, BodyLocation, ScoringCategory, CharacterClass, DEFAULT_CHARACTER, CardDraw, ClassSkillState } from '../types';
 import { generateRandomCharacter, getScoringMilestones } from '../utils/characterGenerator';
+import { cardNumericValue } from '../utils/skillLogic';
 import DeckPanel, { getCardColor, getSuitSymbol } from './DeckPanel';
+import ClassSkillBoard from './ClassSkillBoard';
 
 interface CharacterBoardProps {
     character: CharacterState;
@@ -9,8 +11,19 @@ interface CharacterBoardProps {
     // Shared deck
     deck: CardDraw[];
     drawnCards: CardDraw[];
+    discardPile: CardDraw[];
     deckCount: number;
-    onDrawCard: () => CardDraw | null;
+    hand: CardDraw[];
+    handSize: number;
+    playsPerTurn: number;
+    playsRemaining: number;
+    selectedHandIndex: number | null;
+    onDrawToHand: () => void;
+    onSelectHandCard: (idx: number | null) => void;
+    onPlayCard: (idx: number) => void;
+    onEndTurn: () => void;
+    onHandSizeChange: (n: number) => void;
+    onPlaysPerTurnChange: (n: number) => void;
     onDeckCountChange: (n: number) => void;
     onResetDeck: () => void;
 }
@@ -599,23 +612,53 @@ function isBlackSuit(suit: string) {
     return suit === 'spades' || suit === 'clubs';
 }
 
+/** XP cost to gain one level at the given target level. */
+function xpCostForLevel(targetLevel: number): number {
+    if (targetLevel <= 3) return 1;
+    if (targetLevel <= 6) return 2;
+    return 3; // 7–9
+}
+
+/** Total XP cost to go from fromLevel to toLevel (cumulative). */
+function xpCostToReach(fromLevel: number, toLevel: number): number {
+    let cost = 0;
+    for (let l = fromLevel + 1; l <= toLevel; l++) cost += xpCostForLevel(l);
+    return cost;
+}
+
 function ClassRow({
     className,
     level,
-    onSet,
+    onLevelUpByXP,
     levelUpCard,
     onLevelUp,
+    skillStates,
+    onSkillStatesChange,
+    character,
+    onCharacterChange,
+    lastDrawnValue,
+    selectedCard,
+    onCardPlayed,
 }: {
     className: CharacterClass;
     level: number;
-    onSet: (v: number) => void;
+    onLevelUpByXP: (targetLevel: number) => void;
     levelUpCard?: CardDraw;
     onLevelUp?: () => void;
+    skillStates: ClassSkillState;
+    onSkillStatesChange: (updated: ClassSkillState) => void;
+    character: CharacterState;
+    onCharacterChange: (updated: CharacterState) => void;
+    lastDrawnValue?: number | null;
+    selectedCard?: CardDraw | null;
+    onCardPlayed?: () => void;
 }) {
     const cardLabel = levelUpCard
         ? `${levelUpCard.value}${getSuitSymbol(levelUpCard.suit)}`
         : null;
     const cardColor = levelUpCard ? getCardColor(levelUpCard.suit) : '';
+    const xp = character.resources.xp;
+
     return (
         <div className="flex items-start gap-2 py-2 border-b border-gray-100 last:border-0">
             {/* Class name */}
@@ -638,32 +681,51 @@ function ClassRow({
             </div>
 
             {/* Level pips (9 levels, 1–9; 0 = none) */}
-            <div className="flex gap-1 mt-1">
-                {Array.from({ length: 9 }, (_, i) => (
-                    <button
-                        key={i}
-                        title={`Level ${i + 1}`}
-                        onClick={() => onSet(i + 1 === level ? 0 : i + 1)}
-                        className={`w-6 h-6 rounded-full border-2 text-xs font-bold transition-colors ${i + 1 <= level
-                            ? 'bg-stone-600 border-stone-600 text-white'
-                            : 'bg-white border-gray-300 hover:border-gray-500 text-gray-300'
-                            }`}
-                    >
-                        {i + 1}
-                    </button>
-                ))}
+            <div className="flex gap-1 mt-1 flex-wrap">
+                {Array.from({ length: 9 }, (_, i) => {
+                    const pip = i + 1;
+                    const filled = pip <= level;
+                    const cost = filled ? 0 : xpCostToReach(level, pip);
+                    const affordable = !filled && xp >= cost;
+                    const costLabel = filled
+                        ? `Level ${pip} (gained)`
+                        : affordable
+                            ? `Level ${pip} — spend ${cost} XP (have ${xp})`
+                            : `Level ${pip} — need ${cost} XP (have ${xp})`;
+                    return (
+                        <button
+                            key={i}
+                            title={costLabel}
+                            disabled={filled || !affordable}
+                            onClick={() => !filled && affordable && onLevelUpByXP(pip)}
+                            className={[
+                                'w-6 h-6 rounded-full border-2 text-xs font-bold transition-colors',
+                                filled
+                                    ? 'bg-stone-600 border-stone-600 text-white cursor-default'
+                                    : affordable
+                                        ? 'bg-white border-green-500 text-green-700 hover:bg-green-50 cursor-pointer'
+                                        : 'bg-white border-gray-200 text-gray-300 cursor-not-allowed opacity-50',
+                            ].join(' ')}
+                        >
+                            {filled ? pip : cost}
+                        </button>
+                    );
+                })}
             </div>
 
-            {/* Skill/minigame placeholders */}
-            <div className="flex gap-2 ml-2 flex-wrap">
-                {[1, 2, 3].map(slot => (
-                    <div
-                        key={slot}
-                        className="w-20 h-16 rounded border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center text-xs text-gray-400 text-center"
-                    >
-                        Skill<br />Slot {slot}
-                    </div>
-                ))}
+            {/* Skill/minigame area */}
+            <div className="flex-1 min-w-0 ml-2">
+                <ClassSkillBoard
+                    className={className}
+                    level={level}
+                    skillStates={skillStates}
+                    onSkillStatesChange={onSkillStatesChange}
+                    character={character}
+                    onCharacterChange={onCharacterChange}
+                    lastDrawnValue={lastDrawnValue}
+                    selectedCard={selectedCard}
+                    onCardPlayed={onCardPlayed}
+                />
             </div>
         </div>
     );
@@ -674,19 +736,47 @@ function ClassPanel({
     onChange,
     levelUpCard,
     onSpendCard,
+    skillStates,
+    onSkillStatesChange,
+    character,
+    onCharacterChange,
+    lastDrawnValue,
+    selectedCard,
+    onCardPlayed,
 }: {
     classes: CharacterState['classes'];
     onChange: (updated: CharacterState['classes']) => void;
     levelUpCard: CardDraw | undefined;
     onSpendCard: () => void;
+    skillStates: ClassSkillState;
+    onSkillStatesChange: (updated: ClassSkillState) => void;
+    character: CharacterState;
+    onCharacterChange: (updated: CharacterState) => void;
+    lastDrawnValue?: number | null;
+    selectedCard?: CardDraw | null;
+    onCardPlayed?: () => void;
 }) {
     function setLevel(className: CharacterClass, level: number) {
         onChange(classes.map(c => c.className === className ? { ...c, level } : c));
     }
 
+    function handleLevelUpByXP(className: CharacterClass, targetLevel: number) {
+        const entry = classes.find(c => c.className === className)!;
+        if (targetLevel <= entry.level) return;
+        const cost = xpCostToReach(entry.level, targetLevel);
+        if (character.resources.xp < cost) return;
+        const newClasses = classes.map(c => c.className === className ? { ...c, level: targetLevel } : c);
+        onCharacterChange({
+            ...character,
+            classes: newClasses,
+            resources: { ...character.resources, xp: character.resources.xp - cost },
+        });
+    }
+
     return (
         <div className="bg-white rounded-lg shadow p-3 h-full">
             <h3 className="font-semibold text-gray-700 mb-2 text-sm uppercase tracking-wide">Class Levels &amp; Skills</h3>
+            <div className="text-xs text-gray-500 mb-2">XP available: <span className="font-semibold text-gray-700">{character.resources.xp}</span> — costs: Lv 1–3 = 1 XP · Lv 4–6 = 2 XP · Lv 7–9 = 3 XP</div>
             <div>
                 {CLASS_NAMES.map(name => {
                     const entry = classes.find(c => c.className === name)!;
@@ -703,12 +793,19 @@ function ClassPanel({
                             key={name}
                             className={name}
                             level={entry.level}
-                            onSet={v => setLevel(name, v)}
+                            onLevelUpByXP={targetLevel => handleLevelUpByXP(name, targetLevel)}
                             levelUpCard={canLevelUp ? levelUpCard : undefined}
                             onLevelUp={canLevelUp ? () => {
                                 setLevel(name, Math.min(9, entry.level + 1));
                                 onSpendCard();
                             } : undefined}
+                            skillStates={skillStates}
+                            onSkillStatesChange={onSkillStatesChange}
+                            character={character}
+                            onCharacterChange={onCharacterChange}
+                            lastDrawnValue={lastDrawnValue}
+                            selectedCard={selectedCard}
+                            onCardPlayed={onCardPlayed}
                         />
                     );
                 })}
@@ -726,26 +823,34 @@ const CharacterBoard: React.FC<CharacterBoardProps> = ({
     onChange,
     deck,
     drawnCards,
+    discardPile,
     deckCount,
-    onDrawCard,
+    hand,
+    handSize,
+    playsPerTurn,
+    playsRemaining,
+    selectedHandIndex,
+    onDrawToHand,
+    onSelectHandCard,
+    onPlayCard,
+    onEndTurn,
+    onHandSizeChange,
+    onPlaysPerTurnChange,
     onDeckCountChange,
     onResetDeck,
 }) => {
-    const [spentCount, setSpentCount] = useState<number>(0);
+    // Derive the selected card from hand
+    const selectedCard: CardDraw | null =
+        selectedHandIndex !== null ? (hand[selectedHandIndex] ?? null) : null;
 
-    // The last drawn card that hasn't been spent for leveling yet
-    const availableIndex = drawnCards.length - 1 - spentCount;
+    // Face card level-up offer: only when the selected hand card is a face card
     const levelUpCard: CardDraw | undefined =
-        availableIndex >= 0 && isFaceCard(drawnCards[availableIndex].value)
-            ? drawnCards[availableIndex]
-            : undefined;
+        selectedCard && isFaceCard(selectedCard.value) ? selectedCard : undefined;
 
-    const handleSpendCard = () => setSpentCount(prev => prev + 1);
-
-    // Reset spent count when the deck is reset (drawnCards goes to empty)
-    React.useEffect(() => {
-        if (drawnCards.length === 0) setSpentCount(0);
-    }, [drawnCards.length]);
+    // Consume the selected hand card (used for both level-up and skill plays)
+    const handleSpendCard = () => {
+        if (selectedHandIndex !== null) onPlayCard(selectedHandIndex);
+    };
 
     function update<K extends keyof CharacterState>(key: K, value: CharacterState[K]) {
         onChange({ ...character, [key]: value });
@@ -796,8 +901,18 @@ const CharacterBoard: React.FC<CharacterBoardProps> = ({
                         <DeckPanel
                             deck={deck}
                             drawnCards={drawnCards}
+                            discardPile={discardPile}
                             deckCount={deckCount}
-                            onDraw={onDrawCard}
+                            hand={hand}
+                            handSize={handSize}
+                            playsPerTurn={playsPerTurn}
+                            playsRemaining={playsRemaining}
+                            selectedHandIndex={selectedHandIndex}
+                            onDrawToHand={onDrawToHand}
+                            onSelectHandCard={onSelectHandCard}
+                            onEndTurn={onEndTurn}
+                            onHandSizeChange={onHandSizeChange}
+                            onPlaysPerTurnChange={onPlaysPerTurnChange}
                             onReset={onResetDeck}
                             onDeckCountChange={onDeckCountChange}
                         />
@@ -807,6 +922,13 @@ const CharacterBoard: React.FC<CharacterBoardProps> = ({
                         onChange={c => update('classes', c)}
                         levelUpCard={levelUpCard}
                         onSpendCard={handleSpendCard}
+                        skillStates={character.skillStates}
+                        onSkillStatesChange={ss => update('skillStates', ss)}
+                        character={character}
+                        onCharacterChange={onChange}
+                        lastDrawnValue={selectedCard ? cardNumericValue(selectedCard.value) : null}
+                        selectedCard={selectedCard}
+                        onCardPlayed={handleSpendCard}
                     />
                 </div>
             </div>

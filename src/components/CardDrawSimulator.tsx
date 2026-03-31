@@ -12,8 +12,19 @@ interface CardDrawSimulatorProps {
   // Shared deck (managed in App.tsx)
   deck: CardDraw[];
   drawnCards: CardDraw[];
+  discardPile: CardDraw[];
   deckCount: number;
-  onDrawCard: () => CardDraw | null;
+  hand: CardDraw[];
+  handSize: number;
+  playsPerTurn: number;
+  playsRemaining: number;
+  selectedHandIndex: number | null;
+  onDrawToHand: () => void;
+  onSelectHandCard: (idx: number | null) => void;
+  onPlayCard: (idx: number) => void;
+  onEndTurn: () => void;
+  onHandSizeChange: (n: number) => void;
+  onPlaysPerTurnChange: (n: number) => void;
   onDeckCountChange: (n: number) => void;
   onResetDeck: () => void;
   // Dungeon session persistence
@@ -63,8 +74,19 @@ interface PendingTrap {
 const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
   deck,
   drawnCards,
+  discardPile,
   deckCount,
-  onDrawCard,
+  hand,
+  handSize,
+  playsPerTurn,
+  playsRemaining,
+  selectedHandIndex,
+  onDrawToHand,
+  onSelectHandCard,
+  onPlayCard,
+  onEndTurn,
+  onHandSizeChange,
+  onPlaysPerTurnChange,
   onDeckCountChange,
   onResetDeck,
   session,
@@ -126,35 +148,23 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
   // Core draw logic
   // -------------------------------------------------------------------------
 
-  const drawCard = () => {
-    if (pendingEncounter) return; // must resolve encounter first
-    if (pendingTrap) return;      // must resolve trap first
-    if (deck.length === 0) return;
-
-    const newCard = onDrawCard();
-    if (!newCard) return;
+  const playToBoard = (newCard: CardDraw) => {
+    if (pendingEncounter) return;
+    if (pendingTrap) return;
 
     const moveCount = getCardMoveCount(newCard.value);
 
     if (moveCount === null) {
       // Face card — automatic encounter, no movement.
-      // Draw one more card from the deck to use as the combat roll.
-      // Pick a random encounter card (if any are defined) and route through
-      // the normal pendingEncounter flow so resolution is handled consistently.
+      // Peek at top deck card for the combat roll (does not consume it).
       turnIndexRef.current++;
       const turnIndex = turnIndexRef.current;
       const randomEncounter = encounterCards.length > 0
         ? encounterCards[Math.floor(Math.random() * encounterCards.length)]
         : null;
 
-      let combatCard: CardDraw | null = null;
-      let combatNumericValue = 0;
-      if (deck.length > 1) {
-        combatCard = onDrawCard();
-        if (combatCard) {
-          combatNumericValue = getCardNumericValueHelper(combatCard.value);
-        }
-      }
+      const combatCard = deck.length > 0 ? deck[0] : null;
+      const combatNumericValue = combatCard ? getCardNumericValueHelper(combatCard.value) : 0;
 
       setPendingEncounter({
         card: newCard,
@@ -176,10 +186,6 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
       return;
     }
 
-    // First rank card: start from the entrance (which counts as space 1).
-    // All subsequent draws: find the most recently visited cell in path history
-    // that still has valid unvisited neighbours.  This lets the player resume
-    // anywhere on their trail, so a dead end never permanently blocks progress.
     const isFirstDraw = pathOrderRef.current.length === 0;
     let startRow: number;
     let startCol: number;
@@ -194,11 +200,10 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
       globalVisitedRef.current.add(`${startRow},${startCol}`);
       pathOrderRef.current.push({ row: startRow, col: startCol });
       pathPrefix = [{ row: startRow, col: startCol, cellType: board[startRow][startCol].type }];
-      stepsToMove = moveCount - 1; // entrance already counts as space 1
+      stepsToMove = moveCount - 1;
     } else {
       const resumePos = findResumePosition();
       if (!resumePos) {
-        // Entire reachable area has been fully explored.
         setTurnHistory(prev => [{
           card: newCard,
           stepsAllowed: moveCount,
@@ -215,16 +220,10 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
 
     const cardNumericValue = getCardNumericValueHelper(newCard.value);
     const result = simulateMovement(
-      board,
-      startRow,
-      startCol,
-      stepsToMove,
-      globalVisitedRef.current,
-      collectedCellsRef.current,
-      cardNumericValue
+      board, startRow, startCol, stepsToMove,
+      globalVisitedRef.current, collectedCellsRef.current, cardNumericValue
     );
 
-    // Extend the ordered path history with newly visited cells.
     for (const step of result.path) {
       pathOrderRef.current.push({ row: step.row, col: step.col });
     }
@@ -233,48 +232,31 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
     turnIndexRef.current++;
     const turnIndex = turnIndexRef.current;
     onMovePath(fullPath.map(s => ({ row: s.row, col: s.col })), newCard, turnIndex);
-
-    // Apply immediate character changes from events (items collected, goals)
     applyEventCharacterChanges(result.events);
 
     if (result.pausedAtEncounter) {
       const lastStep = result.path[result.path.length - 1];
       const ec = encounterCards.find(c => c.row === lastStep.row && c.col === lastStep.col) ?? null;
       setPendingEncounter({
-        card: newCard,
-        turnIndex,
-        pathSoFar: fullPath,
-        eventsSoFar: result.events,
-        currentRow: lastStep.row,
-        currentCol: lastStep.col,
+        card: newCard, turnIndex, pathSoFar: fullPath, eventsSoFar: result.events,
+        currentRow: lastStep.row, currentCol: lastStep.col,
         remainingSteps: result.remainingSteps,
-        visitedCells: globalVisitedRef.current,
-        collectedCells: collectedCellsRef.current,
-        encounterCard: ec,
-        cardNumericValue,
+        visitedCells: globalVisitedRef.current, collectedCells: collectedCellsRef.current,
+        encounterCard: ec, cardNumericValue,
       });
     } else if (result.pausedAtTrap) {
       const lastStep = result.path[result.path.length - 1];
       setPendingTrap({
-        card: newCard,
-        turnIndex,
-        pathSoFar: fullPath,
-        eventsSoFar: result.events,
-        currentRow: lastStep.row,
-        currentCol: lastStep.col,
+        card: newCard, turnIndex, pathSoFar: fullPath, eventsSoFar: result.events,
+        currentRow: lastStep.row, currentCol: lastStep.col,
         remainingSteps: result.remainingSteps,
-        visitedCells: globalVisitedRef.current,
-        collectedCells: collectedCellsRef.current,
+        visitedCells: globalVisitedRef.current, collectedCells: collectedCellsRef.current,
         cardNumericValue,
       });
     } else {
-      const record: TurnRecord = {
-        card: newCard,
-        stepsAllowed: moveCount,
-        path: fullPath,
-        events: result.events,
-      };
-      setTurnHistory(prev => [record, ...prev]);
+      setTurnHistory(prev => [{
+        card: newCard, stepsAllowed: moveCount, path: fullPath, events: result.events,
+      }, ...prev]);
     }
   };
 
@@ -688,12 +670,35 @@ const CardDrawSimulator: React.FC<CardDrawSimulatorProps> = ({
       <DeckPanel
         deck={deck}
         drawnCards={drawnCards}
+        discardPile={discardPile}
         deckCount={deckCount}
-        disabled={!!pendingEncounter || !!pendingTrap}
-        onDraw={drawCard}
-        onReset={handleResetDeck}
+        hand={hand}
+        handSize={handSize}
+        playsPerTurn={playsPerTurn}
+        playsRemaining={playsRemaining}
+        selectedHandIndex={selectedHandIndex}
+        onDrawToHand={onDrawToHand}
+        onSelectHandCard={onSelectHandCard}
+        onEndTurn={onEndTurn}
+        onHandSizeChange={onHandSizeChange}
+        onPlaysPerTurnChange={onPlaysPerTurnChange}
         onDeckCountChange={onDeckCountChange}
+        onReset={handleResetDeck}
+        disabled={!!pendingEncounter || !!pendingTrap}
       >
+        {/* Play to dungeon button */}
+        {selectedHandIndex !== null && hand[selectedHandIndex] && !pendingEncounter && !pendingTrap && (
+          <button
+            onClick={() => {
+              const card = hand[selectedHandIndex];
+              playToBoard(card);
+              onPlayCard(selectedHandIndex);
+            }}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded text-sm font-medium"
+          >
+            Play {hand[selectedHandIndex].value} to Dungeon
+          </button>
+        )}
         {/* Trap resolution prompt */}
         {pendingTrap && (
           <div className="border-2 border-yellow-600 rounded p-3 bg-yellow-50">

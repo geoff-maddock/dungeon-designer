@@ -11,7 +11,18 @@ import { generateRandomCharacter, getScoringMilestones } from '../utils/characte
 function renderBoard(overrides?: Partial<CharacterState>) {
     const character: CharacterState = { ...DEFAULT_CHARACTER, ...overrides };
     const onChange = jest.fn();
-    render(<CharacterBoard character={character} onChange={onChange} />);
+    render(
+        <CharacterBoard
+            character={character}
+            onChange={onChange}
+            deck={[]}
+            drawnCards={[]}
+            deckCount={1}
+            onDrawCard={() => null}
+            onDeckCountChange={jest.fn()}
+            onResetDeck={jest.fn()}
+        />
+    );
     return { onChange };
 }
 
@@ -202,7 +213,18 @@ describe('CharacterBoard – class levels', () => {
             ),
         };
         const onChange = jest.fn();
-        render(<CharacterBoard character={character} onChange={onChange} />);
+        render(
+            <CharacterBoard
+                character={character}
+                onChange={onChange}
+                deck={[]}
+                drawnCards={[]}
+                deckCount={1}
+                onDrawCard={() => null}
+                onDeckCountChange={jest.fn()}
+                onResetDeck={jest.fn()}
+            />
+        );
         // Bard is the second class row; find the "Level 2" buttons
         const level2Pips = screen.getAllByTitle('Level 2');
         // Click the one in Bard's row (index 1, since Alchemist is first)
@@ -235,43 +257,90 @@ describe('getScoringMilestones', () => {
 // generateRandomCharacter utility
 // ---------------------------------------------------------------------------
 
-describe('generateRandomCharacter', () => {
-    test('returns a CharacterState with a non-empty name', () => {
-        const char = generateRandomCharacter();
-        expect(char.name.length).toBeGreaterThan(0);
-    });
+// ---------------------------------------------------------------------------
+// Skill slot level gating
+// ---------------------------------------------------------------------------
 
-    test('attributes are within 1–7', () => {
-        for (let i = 0; i < 10; i++) {
-            const { attributes: a } = generateRandomCharacter();
-            ([a.brawn, a.agility, a.mind, a.spirit]).forEach(v => {
-                expect(v).toBeGreaterThanOrEqual(1);
-                expect(v).toBeLessThanOrEqual(7);
-            });
-        }
-    });
-
-    test('all energies are 0–2', () => {
-        for (let i = 0; i < 10; i++) {
-            const { energies: e } = generateRandomCharacter();
-            Object.values(e).forEach(v => {
-                expect(v).toBeGreaterThanOrEqual(0);
-                expect(v).toBeLessThanOrEqual(2);
-            });
-        }
-    });
-
-    test('class levels all start at 0', () => {
-        const { classes } = generateRandomCharacter();
-        classes.forEach(c => expect(c.level).toBe(0));
-    });
-
-    test('body has 6 locations all with 0 wounds and 0 armor', () => {
-        const { body } = generateRandomCharacter();
-        expect(body).toHaveLength(6);
-        body.forEach(loc => {
-            expect(loc.hits).toBe(0);
-            expect(loc.armor).toBe(0);
+describe('CharacterBoard – skill slot level gating', () => {
+    test('Alchemist at level 0 shows all slots locked', () => {
+        renderBoard({
+            classes: DEFAULT_CHARACTER.classes.map(c =>
+                c.className === 'Alchemist' ? { ...c, level: 0 } : c
+            ),
         });
+        const lockedLabels = screen.getAllByText(/Unlocks at Level/i);
+        // At level 0, Alchemist shows 3 locked slots; other classes may add more
+        expect(lockedLabels.length).toBeGreaterThanOrEqual(3);
     });
+
+    test('Alchemist at level 1 unlocks first slot', () => {
+        renderBoard({
+            classes: DEFAULT_CHARACTER.classes.map(c =>
+                c.className === 'Alchemist' ? { ...c, level: 1 } : c
+            ),
+        });
+        // "Potion Rack" skill title should be visible for unlocked slot
+        expect(screen.getByText('Potion Rack')).toBeInTheDocument();
+    });
+
+    test('Alchemist at level 4 unlocks second slot (Transmutation Ladder)', () => {
+        renderBoard({
+            classes: DEFAULT_CHARACTER.classes.map(c =>
+                c.className === 'Alchemist' ? { ...c, level: 4 } : c
+            ),
+        });
+        expect(screen.getByText('Potion Rack')).toBeInTheDocument();
+        expect(screen.getByText('Transmutation Ladder')).toBeInTheDocument();
+    });
+
+    test('Alchemist at level 7 unlocks all three slots', () => {
+        renderBoard({
+            classes: DEFAULT_CHARACTER.classes.map(c =>
+                c.className === 'Alchemist' ? { ...c, level: 7 } : c
+            ),
+        });
+        expect(screen.getByText('Potion Rack')).toBeInTheDocument();
+        expect(screen.getByText('Transmutation Ladder')).toBeInTheDocument();
+        expect(screen.getByText('Volatile Flask')).toBeInTheDocument();
+    });
+});
+
+test('returns a CharacterState with a non-empty name', () => {
+    const char = generateRandomCharacter();
+    expect(char.name.length).toBeGreaterThan(0);
+});
+
+test('attributes are within 1–7', () => {
+    for (let i = 0; i < 10; i++) {
+        const { attributes: a } = generateRandomCharacter();
+        ([a.brawn, a.agility, a.mind, a.spirit]).forEach(v => {
+            expect(v).toBeGreaterThanOrEqual(1);
+            expect(v).toBeLessThanOrEqual(7);
+        });
+    }
+});
+
+test('all energies are 0–2', () => {
+    for (let i = 0; i < 10; i++) {
+        const { energies: e } = generateRandomCharacter();
+        Object.values(e).forEach(v => {
+            expect(v).toBeGreaterThanOrEqual(0);
+            expect(v).toBeLessThanOrEqual(2);
+        });
+    }
+});
+
+test('class levels all start at 0', () => {
+    const { classes } = generateRandomCharacter();
+    classes.forEach(c => expect(c.level).toBe(0));
+});
+
+test('body has 6 locations all with 0 wounds and 0 armor', () => {
+    const { body } = generateRandomCharacter();
+    expect(body).toHaveLength(6);
+    body.forEach(loc => {
+        expect(loc.hits).toBe(0);
+        expect(loc.armor).toBe(0);
+    });
+});
 });
